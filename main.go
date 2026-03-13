@@ -71,6 +71,18 @@ func main() {
 	// Инициализация MQTT handler
 	mqttHandler := handler.NewMQTTHandler(mqttService)
 
+	// Инициализация Serial сервиса (USB подключение к Meshtastic)
+	serialService := service.NewSerialService(messageRepo, deviceRepo)
+	if cfg.ESP32COMPort != "" {
+		if err := serialService.Start(cfg.ESP32COMPort); err != nil {
+			log.Printf("Warning: Failed to start serial service: %v", err)
+		}
+	}
+	defer serialService.Stop()
+
+	// Serial handler
+	serialHandler := handler.NewSerialHandler(serialService)
+
 	// Запуск сервиса обнаружения устройств
 	discoveryConfig := discovery.DiscoveryConfig{
 		EnableBluetooth: cfg.EnableBluetooth,
@@ -313,6 +325,47 @@ func main() {
 	mux.HandleFunc("/api/esp32/message", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			esp32Handler.ReceiveMessage(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// Serial API (COM-порт / USB)
+	mux.HandleFunc("/api/serial/scan", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			serialHandler.ScanPorts(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/serial/connect", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			serialHandler.Connect(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/serial/disconnect", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			serialHandler.Disconnect(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/serial/status", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			serialHandler.GetStatus(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/serial/message", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			serialHandler.SendMessage(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}

@@ -4,7 +4,6 @@ import (
 	"mesh-server/client"
 	"mesh-server/discovery"
 	"mesh-server/handler"
-	"mesh-server/pkg/mqtt"
 	"mesh-server/repository"
 )
 
@@ -18,7 +17,7 @@ type Services struct {
 	DiscoveryHandler *handler.DiscoveryHandler
 	DiscoveryService *discovery.DiscoveryService
 	ESP32Client      *client.ESP32Client
-	MQTTService      mqtt.Service
+	MQTTService      interface{}
 }
 
 func NewServices(
@@ -50,7 +49,7 @@ func NewServices(
 // Close закрывает все сервисы
 func (s *Services) Close() {
 	s.WSHandler.Close()
-	if s.MQTTService != nil {
-		s.MQTTService.Stop()
+	if mqttService, ok := s.MQTTService.(interface{ Stop() }); ok {
+		mqttService.Stop()
 	}
 }
