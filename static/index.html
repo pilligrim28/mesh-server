@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meshtastic Monitor</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --sidebar-width: 350px;
+        }
+        
+        body {
+            overflow: hidden;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        
+        #app {
+            display: flex;
+            height: 100vh;
+        }
+        
+        #map {
+            flex: 1;
+            height: 100%;
+        }
+        
+        #sidebar {
+            width: var(--sidebar-width);
+            background: #16213e;
+            border-left: 1px solid #0f3460;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .sidebar-header {
+            padding: 1rem;
+            background: #0f3460;
+            border-bottom: 1px solid #1a1a2e;
+        }
+        
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 1rem;
+        }
+        
+        .nav-tabs {
+            border-bottom: 1px solid #0f3460;
+        }
+        
+        .nav-tabs .nav-link {
+            color: #aaa;
+            border: none;
+            background: transparent;
+        }
+        
+        .nav-tabs .nav-link.active {
+            color: #fff;
+            background: #0f3460;
+            border: none;
+        }
+        
+        .nav-tabs .nav-link:hover {
+            color: #fff;
+        }
+        
+        .card {
+            background: #1a1a2e;
+            border: 1px solid #0f3460;
+            margin-bottom: 1rem;
+        }
+        
+        .card-header {
+            background: #0f3460;
+            border-bottom: 1px solid #1a1a2e;
+            font-weight: 600;
+        }
+        
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #4ecca3;
+        }
+        
+        .metric-label {
+            font-size: 0.85rem;
+            color: #aaa;
+        }
+        
+        .alert-item {
+            padding: 0.75rem;
+            border-radius: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .alert-critical {
+            background: rgba(220, 53, 69, 0.2);
+            border-left: 3px solid #dc3545;
+        }
+        
+        .alert-warning {
+            background: rgba(255, 193, 7, 0.2);
+            border-left: 3px solid #ffc107;
+        }
+        
+        .alert-info {
+            background: rgba(13, 202, 240, 0.2);
+            border-left: 3px solid #0dcaf0;
+        }
+        
+        .message-item {
+            padding: 0.75rem;
+            border-bottom: 1px solid #0f3460;
+        }
+        
+        .message-outbound {
+            background: rgba(78, 204, 163, 0.1);
+        }
+        
+        .message-inbound {
+            background: rgba(13, 202, 240, 0.1);
+        }
+        
+        .device-marker {
+            background: #4ecca3;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+        }
+        
+        .status-online {
+            color: #4ecca3;
+        }
+        
+        .status-offline {
+            color: #dc3545;
+        }
+        
+        .stat-card {
+            text-align: center;
+            padding: 1rem;
+            background: #0f3460;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #4ecca3;
+        }
+        
+        .stat-label {
+            font-size: 0.85rem;
+            color: #aaa;
+        }
+        
+        .tab-pane {
+            display: none;
+        }
+        
+        .tab-pane.active {
+            display: block;
+        }
+        
+        .ws-status {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+        }
+        
+        .ws-connected {
+            background: #4ecca3;
+        }
+        
+        .ws-disconnected {
+            background: #dc3545;
+        }
+        
+        .scroll-container {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div id="map"></div>
+        <div id="sidebar">
+            <div class="sidebar-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-broadcast"></i> Meshtastic Monitor
+                    <span id="wsStatus" class="ws-status ws-disconnected"></span>
+                </h5>
+                <small class="text-muted" id="lastUpdate">Обновление...</small>
+                <div class="mt-2">
+                    <span class="badge bg-success" id="simStatus">🟢 Симулятор активен</span>
+                </div>
+            </div>
+            
+            <ul class="nav nav-tabs" id="sidebarTabs">
+                <li class="nav-item">
+                    <a class="nav-link active" data-tab="overview">
+                        <i class="bi bi-speedometer2"></i> Обзор
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" data-tab="metrics">
+                        <i class="bi bi-activity"></i> Метрики
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" data-tab="alerts">
+                        <i class="bi bi-bell"></i> Алерты
+                        <span id="alertBadge" class="badge bg-danger d-none">0</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" data-tab="messages">
+                        <i class="bi bi-chat"></i> Сообщения
+                    </a>
+                </li>
+            </ul>
+            
+            <div class="sidebar-content">
+                <!-- Обзор -->
+                <div class="tab-pane active" id="overview-tab">
+                    <div class="row">
+                        <div class="col-6">
+                            <div class="stat-card">
+                                <div class="stat-value" id="deviceCount">0</div>
+                                <div class="stat-label">Устройств</div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="stat-card">
+                                <div class="stat-value" id="alertCount">0</div>
+                                <div class="stat-label">Алертов</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-header">
+                            <i class="bi bi-geo-alt"></i> Устройства на карте
+                        </div>
+                        <div class="card-body scroll-container" id="deviceList"></div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-header">
+                            <i class="bi bi-person-badge"></i> Симулятор человека
+                        </div>
+                        <div class="card-body">
+                            <p class="small text-muted mb-2">Генерация тестовых данных носимого устройства</p>
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-sm btn-outline-danger" onclick="generateEvent('high_heart_rate')">
+                                    <i class="bi bi-heart-pulse"></i> Высокий пульс
+                                </button>
+                                <button class="btn btn-sm btn-outline-warning" onclick="generateEvent('low_battery')">
+                                    <i class="bi bi-battery-low"></i> Низкий заряд
+                                </button>
+                                <button class="btn btn-sm btn-outline-info" onclick="generateEvent('signal_lost')">
+                                    <i class="bi bi-wifi-off"></i> Потеря сигнала
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Метрики -->
+                <div class="tab-pane" id="metrics-tab">
+                    <div id="metricsList"></div>
+                </div>
+                
+                <!-- Алерты -->
+                <div class="tab-pane" id="alerts-tab">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="mb-0">Уведомления</h6>
+                        <button class="btn btn-sm btn-outline-primary" onclick="markAllAlertsRead()">
+                            <i class="bi bi-check-all"></i> Все прочитано
+                        </button>
+                    </div>
+                    <div id="alertsList" class="scroll-container"></div>
+                </div>
+                
+                <!-- Сообщения -->
+                <div class="tab-pane" id="messages-tab">
+                    <div class="card">
+                        <div class="card-header bg-primary text-white">
+                            <i class="bi bi-broadcast"></i> Подключение к ESP32 Meshtastic
+                            <div class="float-end">
+                                <button class="btn btn-sm btn-light me-2" onclick="scanESP32()">
+                                    <i class="bi bi-search"></i> Сканировать
+                                </button>
+                                <button class="btn btn-sm btn-success" onclick="quickConnect()" id="quickConnectBtn" disabled>
+                                    <i class="bi bi-plug"></i> Подключиться
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="esp32Status" class="alert alert-info mb-3">
+                                <i class="bi bi-info-circle"></i> Нажмите "Сканировать" для поиска устройств ESP32 в WiFi и Bluetooth
+                            </div>
+                            
+                            <!-- Панель быстрого подключения -->
+                            <div class="card bg-light mb-3">
+                                <div class="card-body py-2">
+                                    <h6 class="mb-2"><i class="bi bi-lightning-charge"></i> Быстрое подключение</h6>
+                                    <div class="row g-2 align-items-center">
+                                        <div class="col-auto">
+                                            <label class="form-label mb-0">IP адрес:</label>
+                                        </div>
+                                        <div class="col">
+                                            <input type="text" class="form-control form-control-sm" id="esp32IP" placeholder="192.168.4.1" value="192.168.4.1">
+                                        </div>
+                                        <div class="col-auto">
+                                            <button class="btn btn-sm btn-primary" onclick="connectToESP32(document.getElementById('esp32IP').value)">
+                                                <i class="bi bi-plug"></i> Connect
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <small class="text-muted">
+                                        Частые адреса: 192.168.4.1 (AP режим), 192.168.1.100 (WiFi клиент)
+                                    </small>
+                                </div>
+                            </div>
+                            
+                            <form id="messageForm">
+                                <div class="mb-2">
+                                    <label class="form-label">От кого</label>
+                                    <input type="text" class="form-control" id="msgFrom" placeholder="!default (авто)" value="!default">
+                                    <small class="text-muted">Node ID устройства (оставьте !default для использования по умолчанию)</small>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label">Кому</label>
+                                    <input type="text" class="form-control" id="msgTo" placeholder="!87654321 (Node ID телефона)">
+                                    <small class="text-muted">Node ID получателя (телефона)</small>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label">Сообщение</label>
+                                    <textarea class="form-control" id="msgText" rows="2" placeholder="Введите текст сообщения..." required></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-primary w-100">
+                                    <i class="bi bi-send"></i> Отправить
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                    <h6>История сообщений</h6>
+                    <div id="messagesList" class="scroll-container"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+</html>
