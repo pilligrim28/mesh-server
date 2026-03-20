@@ -14,8 +14,8 @@
 #include <Wire.h>
 
 // ==================== НАСТРОЙКИ WiFi ====================
-const char* ssid = "YOUR_WIFI_SSID";        // Измените на ваш SSID
-const char* password = "YOUR_WIFI_PASSWORD"; // Измените на ваш пароль
+const char* ssid = "Sasha+Nastya";        // Измените на ваш SSID
+const char* password = "NastyaForever"; // Измените на ваш пароль
 
 // ==================== НАСТРОЙКИ СЕРВЕРА ====================
 const char* serverUrl = "http://192.168.1.100:8080"; // Адрес mesh-server
@@ -120,9 +120,9 @@ void connectToWiFi() {
         Serial.println("\nWiFi подключен!");
         Serial.print("IP адрес: ");
         Serial.println(WiFi.localIP());
-        
+
         if (oledInitialized) {
-            displayMessage("IP:", WiFi.localIP().toString());
+            displayMessage("IP:", WiFi.localIP().toString().c_str());
         }
     } else {
         wifiConnected = false;
@@ -149,7 +149,7 @@ bool sendMessageToServer(const char* toNode, const char* text) {
     http.addHeader("Content-Type", "application/json");
     
     // Формирование JSON payload
-    StaticJsonDocument<256> doc;
+    JsonDocument doc;
     doc["device_id"] = deviceId;
     doc["from_node"] = nodeId;
     doc["to_node"] = toNode;
@@ -212,7 +212,7 @@ void checkNewMessages() {
 
 // Парсинг полученных сообщений
 void parseMessages(const String& json) {
-    StaticJsonDocument<512> doc;
+    JsonDocument doc;
     DeserializationError error = deserializeJson(doc, json);
     
     if (error) {
@@ -349,8 +349,7 @@ void processCommand(const char* fromNode, const char* text) {
 // Перезагрузка устройства
 void rebootDevice() {
     Serial.println("Перезагрузка...");
-    ESP.restart();  // Для ESP32
-    // Для Pico: watchdog_reboot(0, 0, 0);
+    rp2040.reboot();  // Для Raspberry Pi Pico
 }
 
 // Глубокий сон
