@@ -18,16 +18,17 @@ document.addEventListener('DOMContentLoaded', () => {
     loadData();
     startAutoRefresh();
     checkSimulatorStatus();
+    addStPetersburgPoints();
 });
 
 // Карта
 function initMap() {
-    map = L.map('map').setView([55.7558, 37.6173], 10);
-    
+    map = L.map('map').setView([59.9343, 30.3351], 12);
+
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors'
     }).addTo(map);
-    
+
     // Тёмная тема карты
     fetch('https://basemaps.cartocdn.com/rastertiles/voyager_dark/{z}/{x}/{y}{r}.png')
         .then(response => {
@@ -46,10 +47,10 @@ function initTabs() {
         link.addEventListener('click', (e) => {
             e.preventDefault();
             const tab = e.target.closest('.nav-link').dataset.tab;
-            
+
             document.querySelectorAll('#sidebarTabs .nav-link').forEach(l => l.classList.remove('active'));
             document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-            
+
             e.target.closest('.nav-link').classList.add('active');
             document.getElementById(`${tab}-tab`).classList.add('active');
         });
@@ -60,22 +61,22 @@ function initTabs() {
 function initWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     ws = new WebSocket(`${protocol}//${window.location.host}/ws`);
-    
+
     ws.onopen = () => {
         document.getElementById('wsStatus').className = 'ws-status ws-connected';
         console.log('WebSocket connected');
     };
-    
+
     ws.onclose = () => {
         document.getElementById('wsStatus').className = 'ws-status ws-disconnected';
         console.log('WebSocket disconnected, reconnecting...');
         setTimeout(initWebSocket, 3000);
     };
-    
+
     ws.onerror = (error) => {
         console.error('WebSocket error:', error);
     };
-    
+
     ws.onmessage = (event) => {
         try {
             const data = JSON.parse(event.data);
@@ -161,7 +162,7 @@ function updateMapMarkers() {
             }
         }
     });
-    
+
     // Удаляем маркеры для удалённых устройств
     Object.keys(markers).forEach(id => {
         if (!devices.find(d => d.id == id)) {
@@ -169,7 +170,7 @@ function updateMapMarkers() {
             delete markers[id];
         }
     });
-    
+
     // Центрируем карту если есть устройства
     if (devices.length > 0) {
         const validDevices = devices.filter(d => d.latitude && d.longitude);
@@ -183,14 +184,14 @@ function updateMapMarkers() {
 function createDevicePopup(device) {
     const lastSeen = device.last_seen ? new Date(device.last_seen).toLocaleString('ru-RU') : 'Никогда';
     const isOnline = device.last_seen && new Date(device.last_seen) > new Date(Date.now() - 5 * 60 * 1000);
-    
+
     return `
         <div style="min-width: 200px;">
             <h6><i class="bi bi-broadcast"></i> ${escapeHtml(device.name || device.node_id)}</h6>
             <p class="mb-1"><small><strong>ID:</strong> ${escapeHtml(device.node_id)}</small></p>
             <p class="mb-1"><small><strong>Координаты:</strong> ${device.latitude?.toFixed(4) || 'N/A'}, ${device.longitude?.toFixed(4) || 'N/A'}</small></p>
             <p class="mb-1"><small><strong>Высота:</strong> ${device.altitude || 0} м</small></p>
-            <p class="mb-0"><small><strong>В сети:</strong> 
+            <p class="mb-0"><small><strong>В сети:</strong>
                 <span class="${isOnline ? 'status-online' : 'status-offline'}">
                     ${isOnline ? '● Онлайн' : '○ Офлайн'}
                 </span>
@@ -221,12 +222,12 @@ function updateDeviceList() {
 // Метрики
 function updateMetricsDisplay() {
     const container = document.getElementById('metricsList');
-    
+
     if (metrics.length === 0) {
         container.innerHTML = '<p class="text-muted text-center">Нет метрик</p>';
         return;
     }
-    
+
     const deviceMetrics = {};
     metrics.forEach(m => {
         if (!deviceMetrics[m.device_id]) {
@@ -234,12 +235,12 @@ function updateMetricsDisplay() {
         }
         deviceMetrics[m.device_id].push(m);
     });
-    
+
     container.innerHTML = Object.entries(deviceMetrics).map(([deviceId, deviceMetrics]) => {
         const device = devices.find(d => d.id == deviceId);
         const latest = deviceMetrics[0];
         const timestamp = latest.timestamp ? new Date(latest.timestamp).toLocaleString('ru-RU') : '';
-        
+
         return `
             <div class="card">
                 <div class="card-header">
@@ -282,16 +283,16 @@ function updateMetricsDisplay() {
 // Алерты
 function updateAlertsDisplay() {
     const container = document.getElementById('alertsList');
-    
+
     if (alerts.length === 0) {
         container.innerHTML = '<p class="text-muted text-center">Нет уведомлений</p>';
         return;
     }
-    
+
     container.innerHTML = alerts.map(alert => {
         const device = devices.find(d => d.id == alert.device_id);
         const time = alert.created_at ? new Date(alert.created_at).toLocaleString('ru-RU') : '';
-        
+
         return `
             <div class="alert-item alert-${alert.severity}">
                 <div class="d-flex justify-content-between">
@@ -311,14 +312,14 @@ function updateAlertsDisplay() {
 function updateAlertBadge() {
     const badge = document.getElementById('alertBadge');
     const unreadCount = alerts.filter(a => !a.is_read).length;
-    
+
     if (unreadCount > 0) {
         badge.textContent = unreadCount;
         badge.classList.remove('d-none');
     } else {
         badge.classList.add('d-none');
     }
-    
+
     document.getElementById('alertCount').textContent = alerts.length;
 }
 
@@ -368,8 +369,8 @@ function updateMessagesDisplay() {
                         </span>
                         <p class="mb-1" style="font-size: 1rem;">${escapeHtml(msg.text)}</p>
                         <small class="text-muted">
-                            <i class="bi bi-person-circle"></i> ${escapeHtml(msg.from_node)} 
-                            <i class="bi bi-arrow-right"></i> 
+                            <i class="bi bi-person-circle"></i> ${escapeHtml(msg.from_node)}
+                            <i class="bi bi-arrow-right"></i>
                             ${escapeHtml(msg.to_node || 'Все')}
                         </small>
                     </div>
@@ -378,7 +379,7 @@ function updateMessagesDisplay() {
             </div>
         `;
     }).join('');
-    
+
     // Прокрутка к последнему сообщению
     container.scrollTop = container.scrollHeight;
 }
@@ -439,13 +440,50 @@ function updateStats() {
 }
 
 function updateLastUpdate() {
-    document.getElementById('lastUpdate').textContent = 
+    document.getElementById('lastUpdate').textContent =
         'Обновлено: ' + new Date().toLocaleTimeString('ru-RU');
 }
 
 // Автообновление
 function startAutoRefresh() {
     refreshInterval = setInterval(loadData, 10000); // Каждые 10 секунд
+}
+
+// Добавление точек Санкт-Петербурга
+function addStPetersburgPoints() {
+    const points = [
+        { name: 'Эрмитаж', lat: 59.9398, lon: 30.3146, type: 'landmark' },
+        { name: 'Исаакиевский собор', lat: 59.9341, lon: 30.3062, type: 'landmark' },
+        { name: 'Петропавловская крепость', lat: 59.9497, lon: 30.3162, type: 'landmark' },
+        { name: 'Невский проспект', lat: 59.9343, lon: 30.3351, type: 'landmark' },
+        { name: 'Казанский собор', lat: 59.9343, lon: 30.3242, type: 'landmark' },
+        { name: 'Спас на Крови', lat: 59.9400, lon: 30.3289, type: 'landmark' },
+        { name: 'Мариинский театр', lat: 59.9258, lon: 30.2956, type: 'landmark' },
+        { name: 'Смольный собор', lat: 59.9490, lon: 30.3951, type: 'landmark' },
+        { name: 'Площадь Восстания', lat: 59.9316, lon: 30.3604, type: 'landmark' },
+        { name: 'Московский вокзал', lat: 59.9302, lon: 30.3618, type: 'landmark' }
+    ];
+
+    const landmarkIcon = L.divIcon({
+        className: 'custom-landmark-marker',
+        html: '<div style="background: #ff6b6b; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 4px rgba(0,0,0,0.5);"></div>',
+        iconSize: [12, 12],
+        iconAnchor: [6, 6]
+    });
+
+    points.forEach(point => {
+        const marker = L.marker([point.lat, point.lon], { icon: landmarkIcon }).addTo(map);
+        marker.bindPopup(`
+            <div style="min-width: 150px;">
+                <h6 style="margin: 0 0 5px 0; color: #ff6b6b;">
+                    <i class="bi bi-geo-alt-fill"></i> ${point.name}
+                </h6>
+                <small class="text-muted">Достопримечательность СПб</small>
+            </div>
+        `);
+    });
+
+    console.log('Added', points.length, 'St. Petersburg landmarks');
 }
 
 // Утилиты
@@ -495,7 +533,7 @@ async function checkSimulatorStatus() {
 async function scanESP32() {
     const statusDiv = document.getElementById('esp32Status');
     const connectBtn = document.getElementById('quickConnectBtn');
-    
+
     statusDiv.className = 'alert alert-warning';
     statusDiv.innerHTML = '<i class="bi bi-hourglass-split"></i> Сканирование WiFi и Bluetooth...';
     connectBtn.disabled = true;
@@ -543,7 +581,7 @@ async function scanESP32() {
         if (found) {
             statusDiv.className = 'alert alert-success';
             statusDiv.innerHTML = '<i class="bi bi-check-circle"></i> <strong>Найдено устройств:</strong> ' + (wifiResult.count + bleResult.count) + '<br>' + html;
-            
+
             // Активируем кнопку быстрого подключения
             if (firstDevice) {
                 connectBtn.disabled = false;
@@ -584,10 +622,10 @@ function quickConnect() {
 async function connectToESP32(ip) {
     const statusDiv = document.getElementById('esp32Status');
     const connectBtn = document.getElementById('quickConnectBtn');
-    
+
     statusDiv.className = 'alert alert-warning';
     statusDiv.innerHTML = '<i class="bi bi-hourglass-split"></i> Подключение к ' + ip + '...';
-    
+
     try {
         const response = await fetch(`${API_BASE}/api/esp32/connect`, {
             method: 'POST',
@@ -620,10 +658,10 @@ async function connectToESP32(ip) {
 async function connectToESP32BLE(macAddress) {
     const statusDiv = document.getElementById('esp32Status');
     const connectBtn = document.getElementById('quickConnectBtn');
-    
+
     statusDiv.className = 'alert alert-warning';
     statusDiv.innerHTML = '<i class="bi bi-hourglass-split"></i> Подключение к Bluetooth устройству ' + macAddress + '...';
-    
+
     try {
         const response = await fetch(`${API_BASE}/api/esp32/connect`, {
             method: 'POST',

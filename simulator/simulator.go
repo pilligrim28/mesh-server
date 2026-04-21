@@ -21,7 +21,7 @@ type Simulator struct {
 	stopChan      chan struct{}
 	mu            sync.RWMutex
 	isRunning     bool
-	
+
 	// Параметры симуляции
 	baseLat       float64
 	baseLon       float64
@@ -41,11 +41,11 @@ func NewSimulator(
 		metricsRepo: metricsRepo,
 		alertRepo:   alertRepo,
 		stopChan:    make(chan struct{}),
-		
-		// Базовые координаты (Москва, Красная площадь)
-		baseLat: 55.7520,
-		baseLon: 37.6175,
-		
+
+		// Базовые координаты (Санкт-Петербург, центр города)
+		baseLat: 59.9343,
+		baseLon: 30.3351,
+
 		// Базовые показатели человека в покое
 		baseHeartRate: 72,
 		baseTemp:      36.6,
@@ -78,11 +78,11 @@ func (s *Simulator) Start(interval time.Duration) {
 func (s *Simulator) Stop() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	if !s.isRunning {
 		return
 	}
-	
+
 	s.isRunning = false
 	close(s.stopChan)
 	s.stopChan = make(chan struct{})
@@ -169,32 +169,32 @@ func (s *Simulator) generateData() {
 func (s *Simulator) generateMetrics(now time.Time) *models.Metrics {
 	// Симуляция активности человека (циркадные ритмы + случайность)
 	hour := float64(now.Hour())
-	
+
 	// Пульс: выше днём, ниже ночью
 	activityFactor := 1.0 + 0.3*math.Sin((hour-6)*math.Pi/12)
 	if hour < 6 || hour > 23 {
 		activityFactor = 0.85 // Ночью пульс ниже
 	}
-	
+
 	// Добавляем случайные всплески (физическая активность)
 	if rand.Float32() < 0.1 {
 		activityFactor *= 1.2 + rand.Float64()*0.3
 	}
-	
+
 	heartRate := int(float64(s.baseHeartRate) * activityFactor)
 	heartRate += rand.Intn(7) - 3 // Небольшой шум
-	
+
 	// Температура тела (циркадный ритм)
 	tempVariation := 0.3 * math.Sin((hour-5)*math.Pi/12)
 	temp := s.baseTemp + tempVariation + (rand.Float64()*0.2 - 0.1)
-	
+
 	// CO2 (зависит от активности)
 	co2Base := s.baseCO2
 	if heartRate > 90 {
 		co2Base += (heartRate - 72) * 2 // При активности CO2 выше
 	}
 	co2 := co2Base + rand.Intn(30) - 15
-	
+
 	// Влажность (комфортный диапазон)
 	humidity := 45.0 + rand.Float64()*10 - 5
 
@@ -211,19 +211,19 @@ func (s *Simulator) generateMetrics(now time.Time) *models.Metrics {
 func (s *Simulator) simulateMovement(now time.Time) {
 	// Симуляция ходьбы по району
 	speed := 0.0001 // ~10 метров за тик
-	
+
 	// Используем Perlin-like шум для плавного движения
 	t := now.Unix()
-	
+
 	dx := math.Sin(float64(t)/100) * math.Cos(float64(t)/300)
 	dy := math.Cos(float64(t)/100) * math.Sin(float64(t)/250)
-	
+
 	newLat := s.baseLat + dy*speed*10
 	newLon := s.baseLon + dx*speed*10
-	
+
 	s.device.Latitude = newLat
 	s.device.Longitude = newLon
-	
+
 	s.deviceRepo.UpdatePosition(s.device.ID, newLat, newLon, s.device.Altitude)
 }
 
@@ -244,7 +244,7 @@ func (s *Simulator) generateAlerts() {
 			log.Printf("Simulator: generated out_of_zone alert")
 		}
 	}
-	
+
 	// Алерт "низкий заряд" с вероятностью 0.5%
 	if rand.Float32() < 0.005 {
 		alert := &models.Alert{
