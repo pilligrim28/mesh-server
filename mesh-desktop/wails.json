@@ -16,5 +16,8 @@
     "productVersion": "1.0.0",
     "copyright": "Copyright © 2026",
     "comments": "Мониторинг устройств Meshtastic"
+  },
+  "build": {
+    "tags": "gtk"
   }
 }
