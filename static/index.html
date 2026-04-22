@@ -11,23 +11,23 @@
         :root {
             --sidebar-width: 350px;
         }
-        
+
         body {
             overflow: hidden;
             background: #1a1a2e;
             color: #eee;
         }
-        
+
         #app {
             display: flex;
             height: 100vh;
         }
-        
+
         #map {
             flex: 1;
             height: 100%;
         }
-        
+
         #sidebar {
             width: var(--sidebar-width);
             background: #16213e;
@@ -36,96 +36,96 @@
             flex-direction: column;
             overflow: hidden;
         }
-        
+
         .sidebar-header {
             padding: 1rem;
             background: #0f3460;
             border-bottom: 1px solid #1a1a2e;
         }
-        
+
         .sidebar-content {
             flex: 1;
             overflow-y: auto;
             padding: 1rem;
         }
-        
+
         .nav-tabs {
             border-bottom: 1px solid #0f3460;
         }
-        
+
         .nav-tabs .nav-link {
             color: #aaa;
             border: none;
             background: transparent;
         }
-        
+
         .nav-tabs .nav-link.active {
             color: #fff;
             background: #0f3460;
             border: none;
         }
-        
+
         .nav-tabs .nav-link:hover {
             color: #fff;
         }
-        
+
         .card {
             background: #1a1a2e;
             border: 1px solid #0f3460;
             margin-bottom: 1rem;
         }
-        
+
         .card-header {
             background: #0f3460;
             border-bottom: 1px solid #1a1a2e;
             font-weight: 600;
         }
-        
+
         .metric-value {
             font-size: 1.5rem;
             font-weight: bold;
             color: #4ecca3;
         }
-        
+
         .metric-label {
             font-size: 0.85rem;
             color: #aaa;
         }
-        
+
         .alert-item {
             padding: 0.75rem;
             border-radius: 0.5rem;
             margin-bottom: 0.5rem;
         }
-        
+
         .alert-critical {
             background: rgba(220, 53, 69, 0.2);
             border-left: 3px solid #dc3545;
         }
-        
+
         .alert-warning {
             background: rgba(255, 193, 7, 0.2);
             border-left: 3px solid #ffc107;
         }
-        
+
         .alert-info {
             background: rgba(13, 202, 240, 0.2);
             border-left: 3px solid #0dcaf0;
         }
-        
+
         .message-item {
             padding: 0.75rem;
             border-bottom: 1px solid #0f3460;
         }
-        
+
         .message-outbound {
             background: rgba(78, 204, 163, 0.1);
         }
-        
+
         .message-inbound {
             background: rgba(13, 202, 240, 0.1);
         }
-        
+
         .device-marker {
             background: #4ecca3;
             border: 2px solid #fff;
@@ -133,15 +133,15 @@
             width: 20px;
             height: 20px;
         }
-        
+
         .status-online {
             color: #4ecca3;
         }
-        
+
         .status-offline {
             color: #dc3545;
         }
-        
+
         .stat-card {
             text-align: center;
             padding: 1rem;
@@ -149,26 +149,26 @@
             border-radius: 0.5rem;
             margin-bottom: 1rem;
         }
-        
+
         .stat-value {
             font-size: 2rem;
             font-weight: bold;
             color: #4ecca3;
         }
-        
+
         .stat-label {
             font-size: 0.85rem;
             color: #aaa;
         }
-        
+
         .tab-pane {
             display: none;
         }
-        
+
         .tab-pane.active {
             display: block;
         }
-        
+
         .ws-status {
             display: inline-block;
             width: 8px;
@@ -176,15 +176,15 @@
             border-radius: 50%;
             margin-right: 0.5rem;
         }
-        
+
         .ws-connected {
             background: #4ecca3;
         }
-        
+
         .ws-disconnected {
             background: #dc3545;
         }
-        
+
         .scroll-container {
             max-height: 400px;
             overflow-y: auto;
@@ -205,7 +205,7 @@
                     <span class="badge bg-success" id="simStatus">🟢 Симулятор активен</span>
                 </div>
             </div>
-            
+
             <ul class="nav nav-tabs" id="sidebarTabs">
                 <li class="nav-item">
                     <a class="nav-link active" data-tab="overview">
@@ -228,8 +228,13 @@
                         <i class="bi bi-chat"></i> Сообщения
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link" data-tab="healbe">
+                        <i class="bi bi-watch"></i> Healbe
+                    </a>
+                </li>
             </ul>
-            
+
             <div class="sidebar-content">
                 <!-- Обзор -->
                 <div class="tab-pane active" id="overview-tab">
@@ -247,14 +252,14 @@
                             </div>
                         </div>
                     </div>
-                    
+
                     <div class="card">
                         <div class="card-header">
                             <i class="bi bi-geo-alt"></i> Устройства на карте
                         </div>
                         <div class="card-body scroll-container" id="deviceList"></div>
                     </div>
-                    
+
                     <div class="card">
                         <div class="card-header">
                             <i class="bi bi-person-badge"></i> Симулятор человека
@@ -275,12 +280,12 @@
                         </div>
                     </div>
                 </div>
-                
+
                 <!-- Метрики -->
                 <div class="tab-pane" id="metrics-tab">
                     <div id="metricsList"></div>
                 </div>
-                
+
                 <!-- Алерты -->
                 <div class="tab-pane" id="alerts-tab">
                     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -291,7 +296,7 @@
                     </div>
                     <div id="alertsList" class="scroll-container"></div>
                 </div>
-                
+
                 <!-- Сообщения -->
                 <div class="tab-pane" id="messages-tab">
                     <div class="card">
@@ -310,7 +315,7 @@
                             <div id="esp32Status" class="alert alert-info mb-3">
                                 <i class="bi bi-info-circle"></i> Нажмите "Сканировать" для поиска устройств ESP32 в WiFi и Bluetooth
                             </div>
-                            
+
                             <!-- Панель быстрого подключения -->
                             <div class="card bg-light mb-3">
                                 <div class="card-body py-2">
@@ -333,7 +338,7 @@
                                     </small>
                                 </div>
                             </div>
-                            
+
                             <form id="messageForm">
                                 <div class="mb-2">
                                     <label class="form-label">От кого</label>
@@ -357,6 +362,90 @@
                     </div>
                     <h6>История сообщений</h6>
                     <div id="messagesList" class="scroll-container"></div>
+                </div>
+
+                <!-- Healbe часы -->
+                <div class="tab-pane" id="healbe-tab">
+                    <div class="card">
+                        <div class="card-header bg-info text-white">
+                            <i class="bi bi-watch"></i> Healbe GoBe - Подключение
+                            <div class="float-end">
+                                <button class="btn btn-sm btn-light me-2" onclick="scanHealbe()">
+                                    <i class="bi bi-search"></i> Сканировать
+                                </button>
+                                <button class="btn btn-sm btn-success" onclick="connectHealbe()" id="healbeConnectBtn" disabled>
+                                    <i class="bi bi-bluetooth"></i> Подключить
+                                </button>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div id="healbeStatus" class="alert alert-info mb-3">
+                                <i class="bi bi-info-circle"></i> Нажмите "Сканировать" для поиска часов Healbe по Bluetooth
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">MAC адрес часов:</label>
+                                <input type="text" class="form-control" id="healbeMAC" placeholder="AA:BB:CC:DD:EE:FF">
+                                <small class="text-muted">MAC адрес часов Healbe GoBe</small>
+                            </div>
+
+                            <div class="form-check form-switch mb-3">
+                                <input class="form-check-input" type="checkbox" id="healbeForwardMeshtastic">
+                                <label class="form-check-label" for="healbeForwardMeshtastic">
+                                    Пересылать данные в Meshtastic
+                                </label>
+                            </div>
+
+                            <button class="btn btn-outline-danger w-100" onclick="disconnectHealbe()">
+                                <i class="bi bi-bluetooth-x"></i> Отключить
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <i class="bi bi-activity"></i> Данные с часов
+                            <span id="healbeConnectionStatus" class="badge bg-secondary float-end">Не подключено</span>
+                        </div>
+                        <div class="card-body">
+                            <div class="row text-center">
+                                <div class="col-6 mb-3">
+                                    <div class="metric-value" id="healbeHeartRate">--</div>
+                                    <div class="metric-label"><i class="bi bi-heart-pulse"></i> Пульс (bpm)</div>
+                                </div>
+                                <div class="col-6 mb-3">
+                                    <div class="metric-value" id="healbeStress">--</div>
+                                    <div class="metric-label"><i class="bi bi-emoji-smile"></i> Стресс</div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="metric-value" id="healbeBattery">--</div>
+                                    <div class="metric-label"><i class="bi bi-battery-half"></i> Батарея (%)</div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="metric-value" id="healbeLastUpdate">--</div>
+                                    <div class="metric-label"><i class="bi bi-clock"></i> Обновление</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <i class="bi bi-info-circle"></i> О часах Healbe
+                        </div>
+                        <div class="card-body">
+                            <p class="small text-muted mb-2">
+                                <strong>Healbe GoBe</strong> - умные часы с непрерывным мониторингом:
+                            </p>
+                            <ul class="small text-muted mb-0">
+                                <li>Пульс (HR) в реальном времени</li>
+                                <li>Уровень стресса (0-4)</li>
+                                <li>Качество сна</li>
+                                <li>Потребление калорий</li>
+                                <li>Баланс воды</li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>

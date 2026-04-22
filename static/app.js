@@ -100,6 +100,9 @@ function handleWebSocketMessage(data) {
         // Новое сообщение - обновляем список
         console.log('New message received:', data.message);
         loadData();
+    } else if (data.type === 'healbe_data') {
+        // Данные от часов Healbe
+        handleHealbeWebSocket(data);
     }
 
     loadData();
@@ -698,5 +701,186 @@ window.app = {
     messages: () => messages,
     refresh: loadData,
     scanESP32: scanESP32,
-    connectToESP32: connectToESP32
+    connectToESP32: connectToESP32,
+    scanHealbe: scanHealbe,
+    connectHealbe: connectHealbe,
+    disconnectHealbe: disconnectHealbe
 };
+
+// ===== Healbe GoBe Functions =====
+
+// Сканирование часов Healbe
+async function scanHealbe() {
+    const statusDiv = document.getElementById('healbeStatus');
+    const connectBtn = document.getElementById('healbeConnectBtn');
+
+    statusDiv.className = 'alert alert-warning';
+    statusDiv.innerHTML = '<i class="bi bi-hourglass-split"></i> Сканирование Bluetooth...';
+    connectBtn.disabled = true;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/healbe/scan`);
+        const result = await response.json();
+
+        if (result.count > 0 && result.devices.length > 0) {
+            const device = result.devices[0];
+            document.getElementById('healbeMAC').value = device.address;
+
+            statusDiv.className = 'alert alert-success';
+            statusDiv.innerHTML = `
+                <i class="bi bi-check-circle"></i> <strong>Найдено:</strong> ${device.name}<br>
+                <small>MAC: ${device.address} (RSSI: ${device.rssi} dBm)</small>
+            `;
+            connectBtn.disabled = false;
+        } else {
+            statusDiv.className = 'alert alert-warning';
+            statusDiv.innerHTML = `
+                <i class="bi bi-exclamation-triangle"></i> Часы Healbe не найдены.<br>
+                <small>Убедитесь что часы включены и находятся в радиусе Bluetooth</small>
+            `;
+        }
+    } catch (error) {
+        statusDiv.className = 'alert alert-danger';
+        statusDiv.innerHTML = `<i class="bi bi-x-circle"></i> Ошибка сканирования: ${error.message}`;
+    }
+}
+
+// Подключение к часам Healbe
+async function connectHealbe() {
+    const mac = document.getElementById('healbeMAC').value;
+    const statusDiv = document.getElementById('healbeStatus');
+    const connectBtn = document.getElementById('healbeConnectBtn');
+
+    if (!mac) {
+        alert('Введите MAC адрес часов');
+        return;
+    }
+
+    statusDiv.className = 'alert alert-warning';
+    statusDiv.innerHTML = '<i class="bi bi-hourglass-split"></i> Подключение к ' + mac + '...';
+    connectBtn.disabled = true;
+
+    try {
+        const response = await fetch(`${API_BASE}/api/healbe/connect`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mac: mac })
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            statusDiv.className = 'alert alert-success';
+            statusDiv.innerHTML = `
+                <i class="bi bi-bluetooth"></i> <strong>Подключено к ${mac}</strong><br>
+                <small>Получение данных о пульсе и стрессе...</small>
+            `;
+            document.getElementById('healbeConnectionStatus').className = 'badge bg-success float-end';
+            document.getElementById('healbeConnectionStatus').textContent = 'Подключено';
+
+            // Включаем пересылку в Meshtastic если checkbox отмечен
+            const forwardEnabled = document.getElementById('healbeForwardMeshtastic').checked;
+            if (forwardEnabled) {
+                await fetch(`${API_BASE}/api/healbe/forward`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: true })
+                });
+            }
+
+            // Начинаем polling данных
+            startHealbeDataPolling();
+        } else {
+            throw new Error(result.message || 'Ошибка подключения');
+        }
+    } catch (error) {
+        statusDiv.className = 'alert alert-danger';
+        statusDiv.innerHTML = `<i class="bi bi-x-circle"></i> Ошибка подключения: ${error.message}`;
+        connectBtn.disabled = false;
+    }
+}
+
+// Отключение от часов Healbe
+async function disconnectHealbe() {
+    const statusDiv = document.getElementById('healbeStatus');
+    const connectBtn = document.getElementById('healbeConnectBtn');
+
+    try {
+        await fetch(`${API_BASE}/api/healbe/disconnect`, { method: 'POST' });
+
+        statusDiv.className = 'alert alert-info';
+        statusDiv.innerHTML = '<i class="bi bi-info-circle"></i> Отключено от часов Healbe';
+        document.getElementById('healbeConnectionStatus').className = 'badge bg-secondary float-end';
+        document.getElementById('healbeConnectionStatus').textContent = 'Не подключено';
+        connectBtn.disabled = false;
+
+        // Останавливаем polling
+        stopHealbeDataPolling();
+
+        // Сбрасываем отображение данных
+        document.getElementById('healbeHeartRate').textContent = '--';
+        document.getElementById('healbeStress').textContent = '--';
+        document.getElementById('healbeBattery').textContent = '--';
+        document.getElementById('healbeLastUpdate').textContent = '--';
+    } catch (error) {
+        statusDiv.className = 'alert alert-danger';
+        statusDiv.innerHTML = `<i class="bi bi-x-circle"></i> Ошибка отключения: ${error.message}`;
+    }
+}
+
+// Polling данных Healbe
+let healbePollingInterval = null;
+
+function startHealbeDataPolling() {
+    // Загружаем данные сразу
+    loadHealbeData();
+
+    // И затем каждые 5 секунд
+    healbePollingInterval = setInterval(loadHealbeData, 5000);
+}
+
+function stopHealbeDataPolling() {
+    if (healbePollingInterval) {
+        clearInterval(healbePollingInterval);
+        healbePollingInterval = null;
+    }
+}
+
+async function loadHealbeData() {
+    try {
+        const response = await fetch(`${API_BASE}/api/healbe/data`);
+        if (!response.ok) return;
+
+        const data = await response.json();
+        if (data && data.length > 0) {
+            const latest = data[0];
+            updateHealbeDisplay(latest);
+        }
+    } catch (error) {
+        console.error('Failed to load Healbe data:', error);
+    }
+}
+
+function updateHealbeDisplay(data) {
+    if (data.heart_rate) {
+        document.getElementById('healbeHeartRate').textContent = data.heart_rate;
+    }
+    if (data.stress_level !== undefined) {
+        const stressLabels = ['Нет', 'Низкий', 'Средний', 'Высокий', 'Критический'];
+        document.getElementById('healbeStress').textContent = stressLabels[data.stress_level] || data.stress_level;
+    }
+    if (data.battery) {
+        document.getElementById('healbeBattery').textContent = data.battery + '%';
+    }
+    if (data.timestamp) {
+        const time = new Date(data.timestamp).toLocaleTimeString('ru-RU');
+        document.getElementById('healbeLastUpdate').textContent = time;
+    }
+}
+
+// Обработка WebSocket сообщений от Healbe
+function handleHealbeWebSocket(data) {
+    if (data.type === 'healbe_data') {
+        updateHealbeDisplay(data.payload);
+    }
+}

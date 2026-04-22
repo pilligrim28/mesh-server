@@ -115,6 +115,14 @@ func main() {
 	// Обработчик симулятора
 	simHandler := handler.NewSimulatorHandler(sim)
 
+	// Инициализация Healbe handler (часы GoBe)
+	healbeHandler := handler.NewHealbeHandler(metricsRepo, deviceRepo, services.WSHandler)
+	// Устанавливаем ESP32 клиент для пересылки в Meshtastic
+	if cfg.ESP32URL != "" {
+		esp32Client := client.NewESP32Client(cfg.ESP32URL)
+		healbeHandler.SetMeshtasticClient(esp32Client)
+	}
+
 	// Настройка роутинга
 	mux := http.NewServeMux()
 
@@ -455,6 +463,50 @@ func main() {
 	mux.HandleFunc("/api/simulator/start", simHandler.Start)
 	mux.HandleFunc("/api/simulator/stop", simHandler.Stop)
 	mux.HandleFunc("/api/simulator/event", simHandler.Event)
+
+	// Healbe API (часы GoBe)
+	mux.HandleFunc("/api/healbe/scan", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			healbeHandler.ScanHealbeDevices(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/healbe/connect", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			healbeHandler.ConnectToHealbe(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/healbe/disconnect", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			healbeHandler.DisconnectHealbe(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/healbe/status", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			healbeHandler.GetHealbeStatus(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/healbe/data", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			healbeHandler.GetHealbeData(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/healbe/forward", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			healbeHandler.ForwardToMeshtastic(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 
 	// Static files (frontend)
 	fs := http.FileServer(http.Dir("static"))

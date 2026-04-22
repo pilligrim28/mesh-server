@@ -29,13 +29,25 @@ type DiscoveredDevice struct {
 
 // Metrics - физические показатели с датчиков
 type Metrics struct {
-	ID        int64     `json:"id"`
-	DeviceID  int64     `json:"device_id"`
-	HeartRate int       `json:"heart_rate,omitempty"` // Пульс
-	CO2       int       `json:"co2,omitempty"`        // CO2 в ppm
-	Temp      float64   `json:"temp,omitempty"`       // Температура в °C
-	Humidity  float64   `json:"humidity,omitempty"`   // Влажность в %
-	Timestamp time.Time `json:"timestamp"`
+	ID          int64     `json:"id"`
+	DeviceID    int64     `json:"device_id"`
+	HeartRate   int       `json:"heart_rate,omitempty"`   // Пульс
+	StressLevel int       `json:"stress_level,omitempty"` // Уровень стресса (0-4)
+	CO2         int       `json:"co2,omitempty"`          // CO2 в ppm
+	Temp        float64   `json:"temp,omitempty"`         // Температура в °C
+	Humidity    float64   `json:"humidity,omitempty"`     // Влажность в %
+	Battery     int       `json:"battery,omitempty"`      // Заряд батареи (%)
+	Timestamp   time.Time `json:"timestamp"`
+}
+
+// HealbeMetrics - метрики специфичные для часов Healbe
+type HealbeMetrics struct {
+	ID          int64     `json:"id"`
+	DeviceID    int64     `json:"device_id"`
+	HeartRate   int       `json:"heart_rate"`   // Пульс (bpm)
+	StressLevel int       `json:"stress_level"` // Уровень стресса (0-4)
+	Battery     int       `json:"battery"`      // Заряд батареи (%)
+	Timestamp   time.Time `json:"timestamp"`
 }
 
 // Alert - уведомление о событии (например, человек вне зоны)
