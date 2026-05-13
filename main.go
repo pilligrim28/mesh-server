@@ -31,6 +31,7 @@ func main() {
 	// Инициализация репозиториев
 	deviceRepo := repository.NewDeviceRepository(db.DB)
 	metricsRepo := repository.NewMetricsRepository(db.DB)
+	healbeRepo := repository.NewHealbeRepository(db.DB)
 	alertRepo := repository.NewAlertRepository(db.DB)
 	messageRepo := repository.NewMessageRepository(db.DB, deviceRepo)
 	discoveryRepo := repository.NewDiscoveryRepository(db.DB)
@@ -116,7 +117,7 @@ func main() {
 	simHandler := handler.NewSimulatorHandler(sim)
 
 	// Инициализация Healbe handler (часы GoBe)
-	healbeHandler := handler.NewHealbeHandler(metricsRepo, deviceRepo, services.WSHandler)
+	healbeHandler := handler.NewHealbeHandler(healbeRepo, metricsRepo, deviceRepo, services.WSHandler, bleScanner)
 	// Устанавливаем ESP32 клиент для пересылки в Meshtastic
 	if cfg.ESP32URL != "" {
 		esp32Client := client.NewESP32Client(cfg.ESP32URL)
