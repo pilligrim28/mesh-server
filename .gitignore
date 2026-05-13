@@ -1,29 +1,47 @@
-# Binaries
+```
+# Compiled and build artifacts
+*.pyc
+__pycache__/
+*.o
+*.obj
 *.exe
-*.exe~
 *.dll
 *.so
-*.dylib
-mesh-server
+*.a
+*.out
 
-# Database
-*.db
-*.sqlite
-*.sqlite3
+# Dependencies
+venv/
+.venv/
+node_modules/
+dist/
+build/
+target/
+.gradle/
+.mypy_cache/
+.pytest_cache/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+*.swo
 
 # Environment
 .env
+.env.local
+*.env.*
 
-# IDE
+# Editors
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
 
-# Logs
-*.log
+# Coverage
+coverage/
+htmlcov/
+.coverage
 
-# OS
+# System files
 .DS_Store
 Thumbs.db
+```

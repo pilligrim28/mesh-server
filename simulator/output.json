@@ -1,0 +1,207 @@
+{
+  "landmarks": [
+    {
+      "name": "Дворцовая площадь",
+      "latitude": 59.9398,
+      "longitude": 30.3146
+    },
+    {
+      "name": "Эрмитаж",
+      "latitude": 59.9417,
+      "longitude": 30.3127
+    },
+    {
+      "name": "Исаакиевский собор",
+      "latitude": 59.9335,
+      "longitude": 30.3048
+    },
+    {
+      "name": "Спас на Крови",
+      "latitude": 59.9402,
+      "longitude": 30.3269
+    },
+    {
+      "name": "Казанский собор",
+      "latitude": 59.9345,
+      "longitude": 30.3224
+    },
+    {
+      "name": "Петропавловская крепость",
+      "latitude": 59.9502,
+      "longitude": 30.3159
+    },
+    {
+      "name": "Невский проспект (начало)",
+      "latitude": 59.9341,
+      "longitude": 30.3163
+    },
+    {
+      "name": "Невский проспект (конец)",
+      "latitude": 59.9295,
+      "longitude": 30.3586
+    },
+    {
+      "name": "Марсово поле",
+      "latitude": 59.9445,
+      "longitude": 30.3208
+    },
+    {
+      "name": "Летний сад",
+      "latitude": 59.9466,
+      "longitude": 30.3291
+    },
+    {
+      "name": "Стрелка Васильевского острова",
+      "latitude": 59.9429,
+      "longitude": 30.3067
+    },
+    {
+      "name": "Медный всадник",
+      "latitude": 59.9365,
+      "longitude": 30.3058
+    },
+    {
+      "name": "Новая Голландия",
+      "latitude": 59.9208,
+      "longitude": 30.2936
+    },
+    {
+      "name": "Елагин остров",
+      "latitude": 59.9676,
+      "longitude": 30.2926
+    }
+  ],
+  "people": [
+    {
+      "id": "person_1",
+      "name": "Турист 1",
+      "latitude": 59.9502,
+      "longitude": 30.3159,
+      "current_landmark": "Петропавловская крепость",
+      "target_landmark": "Петропавловская крепость",
+      "state": "visiting",
+      "speed": 14.08,
+      "heart_rate": 85,
+      "temperature": 36.6,
+      "co2": 395
+    },
+    {
+      "id": "person_2",
+      "name": "Турист 2",
+      "latitude": 59.9466,
+      "longitude": 30.3291,
+      "current_landmark": "Летний сад",
+      "target_landmark": "Летний сад",
+      "state": "visiting",
+      "speed": 13.94,
+      "heart_rate": 79,
+      "temperature": 36.6,
+      "co2": 391
+    },
+    {
+      "id": "person_3",
+      "name": "Турист 3",
+      "latitude": 59.9676,
+      "longitude": 30.2926,
+      "current_landmark": "Елагин остров",
+      "target_landmark": "Елагин остров",
+      "state": "visiting",
+      "speed": 13.04,
+      "heart_rate": 87,
+      "temperature": 36.6,
+      "co2": 403
+    },
+    {
+      "id": "person_4",
+      "name": "Турист 4",
+      "latitude": 59.9208,
+      "longitude": 30.2936,
+      "current_landmark": "Новая Голландия",
+      "target_landmark": "Новая Голландия",
+      "state": "visiting",
+      "speed": 10.58,
+      "heart_rate": 84,
+      "temperature": 36.7,
+      "co2": 410
+    },
+    {
+      "id": "person_5",
+      "name": "Турист 5",
+      "latitude": 59.9365,
+      "longitude": 30.3058,
+      "current_landmark": "Медный всадник",
+      "target_landmark": "Медный всадник",
+      "state": "visiting",
+      "speed": 12.75,
+      "heart_rate": 85,
+      "temperature": 36.7,
+      "co2": 395
+    },
+    {
+      "id": "person_6",
+      "name": "Турист 6",
+      "latitude": 59.9295,
+      "longitude": 30.3586,
+      "current_landmark": "Невский проспект (конец)",
+      "target_landmark": "Невский проспект (конец)",
+      "state": "visiting",
+      "speed": 11.88,
+      "heart_rate": 79,
+      "temperature": 36.5,
+      "co2": 401
+    },
+    {
+      "id": "person_7",
+      "name": "Турист 7",
+      "latitude": 59.9429,
+      "longitude": 30.3067,
+      "current_landmark": "Стрелка Васильевского острова",
+      "target_landmark": "Стрелка Васильевского острова",
+      "state": "visiting",
+      "speed": 10.68,
+      "heart_rate": 81,
+      "temperature": 36.7,
+      "co2": 398
+    },
+    {
+      "id": "person_8",
+      "name": "Турист 8",
+      "latitude": 59.9466,
+      "longitude": 30.3291,
+      "current_landmark": "Летний сад",
+      "target_landmark": "Летний сад",
+      "state": "visiting",
+      "speed": 10.63,
+      "heart_rate": 86,
+      "temperature": 36.6,
+      "co2": 407
+    },
+    {
+      "id": "person_9",
+      "name": "Турист 9",
+      "latitude": 59.9341,
+      "longitude": 30.3163,
+      "current_landmark": "Невский проспект (начало)",
+      "target_landmark": "Невский проспект (начало)",
+      "state": "visiting",
+      "speed": 10.08,
+      "heart_rate": 86,
+      "temperature": 36.5,
+      "co2": 407
+    },
+    {
+      "id": "person_10",
+      "name": "Турист 10",
+      "latitude": 59.9466,
+      "longitude": 30.3291,
+      "current_landmark": "Летний сад",
+      "target_landmark": "Летний сад",
+      "state": "visiting",
+      "speed": 10.62,
+      "heart_rate": 88,
+      "temperature": 36.7,
+      "co2": 393
+    }
+  ],
+  "timestamp": 1778653167.2043028
+}
