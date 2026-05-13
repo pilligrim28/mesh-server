@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Симуляция людей в Санкт-Петербурге</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        
+        .container {
+            display: flex;
+            height: 100vh;
+        }
+        
+        #map {
+            flex: 1;
+            height: 100%;
+        }
+        
+        .sidebar {
+            width: 350px;
+            background: #16213e;
+            padding: 20px;
+            overflow-y: auto;
+            border-left: 2px solid #0f3460;
+        }
+        
+        h1 {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            color: #e94560;
+            text-align: center;
+        }
+        
+        .stats {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding: 8px;
+            background: #1a1a2e;
+            border-radius: 4px;
+        }
+        
+        .controls {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #e94560;
+        }
+        
+        input[type="range"], input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            border: none;
+            border-radius: 4px;
+            background: #1a1a2e;
+            color: #eee;
+        }
+        
+        button {
+            width: 100%;
+            padding: 12px;
+            margin: 5px 0;
+            border: none;
+            border-radius: 4px;
+            background: #e94560;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+        
+        button:hover {
+            background: #ff6b6b;
+        }
+        
+        button.active {
+            background: #4ecca3;
+        }
+        
+        .people-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .person-card {
+            background: #1a1a2e;
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            border-left: 3px solid #4ecca3;
+        }
+        
+        .person-card.walking {
+            border-left-color: #ffd93d;
+        }
+        
+        .person-card.visiting {
+            border-left-color: #e94560;
+        }
+        
+        .person-card.resting {
+            border-left-color: #6c5ce7;
+        }
+        
+        .legend {
+            background: #0f3460;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            margin-right: 10px;
+        }
+        
+        .metrics {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px;
+            margin-top: 5px;
+            font-size: 0.8rem;
+            color: #aaa;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div id="map"></div>
+        <div class="sidebar">
+            <h1>🏛️ Симмуляция СПб</h1>
+            
+            <div class="stats">
+                <div class="stat-item">
+                    <span>Всего людей:</span>
+                    <span id="totalPeople">0</span>
+                </div>
+                <div class="stat-item">
+                    <span>Идут:</span>
+                    <span id="walkingCount">0</span>
+                </div>
+                <div class="stat-item">
+                    <span>Посещают:</span>
+                    <span id="visitingCount">0</span>
+                </div>
+                <div class="stat-item">
+                    <span>Отдыхают:</span>
+                    <span id="restingCount">0</span>
+                </div>
+                <div class="stat-item">
+                    <span>Время симуляции:</span>
+                    <span id="simTime">00:00</span>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <div class="control-group">
+                    <label>Количество людей: <span id="peopleCountValue">50</span></label>
+                    <input type="range" id="peopleCount" min="10" max="200" value="50">
+                </div>
+                
+                <div class="control-group">
+                    <label>Скорость симуляции: <span id="speedValue">1x</span></label>
+                    <input type="range" id="simSpeed" min="1" max="10" value="1">
+                </div>
+                
+                <button id="startBtn" onclick="toggleSimulation()">▶️ Старт</button>
+                <button onclick="resetSimulation()">🔄 Сброс</button>
+                <button onclick="exportData()">💾 Экспорт JSON</button>
+            </div>
+            
+            <div class="legend">
+                <h3 style="margin-bottom: 10px; color: #e94560;">Легенда</h3>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #ffd93d;"></div>
+                    <span>Идут</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #e94560;"></div>
+                    <span>Посещают место</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #6c5ce7;"></div>
+                    <span>Отдыхают</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background: #4ecca3;"></div>
+                    <span>Достопримечательность</span>
+                </div>
+            </div>
+            
+            <h3 style="margin: 20px 0 10px; color: #e94560;">Люди (последние 10)</h3>
+            <div class="people-list" id="peopleList"></div>
+        </div>
+    </div>
+    
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // Достопримечательности Санкт-Петербурга
+        const landmarks = [
+            { name: "Эрмитаж", lat: 59.9398, lng: 30.3146 },
+            { name: "Спас на Крови", lat: 59.9402, lng: 30.3263 },
+            { name: "Исаакиевский собор", lat: 59.9394, lng: 30.3061 },
+            { name: "Казанский собор", lat: 59.9343, lng: 30.3227 },
+            { name: "Петропавловская крепость", lat: 59.9508, lng: 30.3158 },
+            { name: "Невский проспект", lat: 59.9345, lng: 30.3350 },
+            { name: "Мариинский театр", lat: 59.9208, lng: 30.2919 },
+            { name: "Русский музей", lat: 59.9377, lng: 30.3273 },
+            { name: "Стрелка Васильевского острова", lat: 59.9427, lng: 30.2962 },
+            { name: "Александро-Невская лавра", lat: 59.9336, lng: 30.3813 },
+            { name: "Юсуповский дворец", lat: 59.9267, lng: 30.2953 },
+            { name: "Кунсткамера", lat: 59.9409, lng: 30.2983 },
+            { name: "Михайловский замок", lat: 59.9367, lng: 30.3256 },
+            { name: "Смольный собор", lat: 59.9493, lng: 30.3742 },
+            { name: "Новая Голландия", lat: 59.9314, lng: 30.2979 }
+        ];
+        
+        let map;
+        let people = [];
+        let landmarkMarkers = [];
+        let personMarkers = [];
+        let simulationRunning = false;
+        let simulationInterval;
+        let simSpeed = 1;
+        let simTime = 0;
+        let totalPeople = 50;
+        
+        // Инициализация карты
+        function initMap() {
+            map = L.map('map').setView([59.9343, 30.3350], 13);
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(map);
+            
+            // Добавляем маркеры достопримечательностей
+            landmarks.forEach(landmark => {
+                const marker = L.marker([landmark.lat, landmark.lng])
+                    .addTo(map)
+                    .bindPopup(`<b>${landmark.name}</b>`);
+                landmarkMarkers.push(marker);
+            });
+        }
+        
+        // Класс Person
+        class Person {
+            constructor(id) {
+                this.id = id;
+                this.state = 'walking'; // walking, visiting, resting
+                this.currentLandmark = null;
+                this.targetLandmark = null;
+                this.progress = 0;
+                this.metrics = {
+                    heartRate: 70 + Math.random() * 20,
+                    temperature: 36.5 + Math.random() * 0.5,
+                    co2: 400 + Math.random() * 50
+                };
+                
+                // Случайная стартовая позиция
+                const startLandmark = landmarks[Math.floor(Math.random() * landmarks.length)];
+                this.lat = startLandmark.lat + (Math.random() - 0.5) * 0.01;
+                this.lng = startLandmark.lng + (Math.random() - 0.5) * 0.01;
+                
+                this.chooseNewTarget();
+            }
+            
+            chooseNewTarget() {
+                const available = landmarks.filter(l => l !== this.currentLandmark);
+                this.targetLandmark = available[Math.floor(Math.random() * available.length)];
+                this.progress = 0;
+            }
+            
+            update() {
+                if (this.state === 'walking') {
+                    this.progress += 0.02 * simSpeed;
+                    
+                    if (this.progress >= 1) {
+                        this.arriveAtTarget();
+                    } else {
+                        // Интерполяция позиции
+                        this.lat = this.currentLandmark.lat + 
+                                  (this.targetLandmark.lat - this.currentLandmark.lat) * this.progress;
+                        this.lng = this.currentLandmark.lng + 
+                                  (this.targetLandmark.lng - this.currentLandmark.lng) * this.progress;
+                        
+                        // Обновление метрик при ходьбе
+                        this.metrics.heartRate = Math.min(120, this.metrics.heartRate + 0.1);
+                        this.metrics.co2 = Math.min(600, this.metrics.co2 + 0.5);
+                    }
+                } else if (this.state === 'visiting') {
+                    this.progress += 0.01 * simSpeed;
+                    
+                    if (this.progress >= 1) {
+                        this.state = 'resting';
+                        this.progress = 0;
+                        // Выбор случайной точки для отдыха рядом
+                        this.targetLandmark = landmarks[Math.floor(Math.random() * landmarks.length)];
+                    }
+                    
+                    this.metrics.heartRate = Math.max(80, this.metrics.heartRate - 0.05);
+                } else if (this.state === 'resting') {
+                    this.progress += 0.015 * simSpeed;
+                    
+                    if (this.progress >= 1) {
+                        this.state = 'walking';
+                        this.currentLandmark = this.targetLandmark;
+                        this.chooseNewTarget();
+                    }
+                    
+                    this.metrics.heartRate = Math.max(70, this.metrics.heartRate - 0.1);
+                    this.metrics.co2 = Math.max(400, this.metrics.co2 - 1);
+                }
+            }
+            
+            arriveAtTarget() {
+                this.currentLandmark = this.targetLandmark;
+                this.state = 'visiting';
+                this.progress = 0;
+                this.lat = this.currentLandmark.lat;
+                this.lng = this.currentLandmark.lng;
+            }
+            
+            getColor() {
+                switch(this.state) {
+                    case 'walking': return '#ffd93d';
+                    case 'visiting': return '#e94560';
+                    case 'resting': return '#6c5ce7';
+                    default: return '#4ecca3';
+                }
+            }
+            
+            getStateName() {
+                switch(this.state) {
+                    case 'walking': return 'Идёт';
+                    case 'visiting': return 'Посещает';
+                    case 'resting': return 'Отдыхает';
+                    default: return 'Неизвестно';
+                }
+            }
+        }
+        
+        function createPeople(count) {
+            people = [];
+            for (let i = 0; i < count; i++) {
+                people.push(new Person(i));
+            }
+            renderPeopleMarkers();
+        }
+        
+        function renderPeopleMarkers() {
+            // Удаляем старые маркеры
+            personMarkers.forEach(marker => map.removeLayer(marker));
+            personMarkers = [];
+            
+            // Создаём новые маркеры
+            people.forEach(person => {
+                const circle = L.circleMarker([person.lat, person.lng], {
+                    radius: 6,
+                    fillColor: person.getColor(),
+                    color: '#fff',
+                    weight: 1,
+                    opacity: 0.8,
+                    fillOpacity: 0.7
+                }).addTo(map);
+                
+                circle.bindPopup(`
+                    <b>Человек #${person.id}</b><br>
+                    Состояние: ${person.getStateName()}<br>
+                    Пульс: ${person.metrics.heartRate.toFixed(0)} уд/мин<br>
+                    Температура: ${person.metrics.temperature.toFixed(1)}°C<br>
+                    CO2: ${person.metrics.co2.toFixed(0)} ppm
+                `);
+                
+                personMarkers.push(circle);
+            });
+        }
+        
+        function updatePeopleMarkers() {
+            people.forEach((person, index) => {
+                const marker = personMarkers[index];
+                marker.setLatLng([person.lat, person.lng]);
+                marker.setStyle({ fillColor: person.getColor() });
+            });
+        }
+        
+        function updateStats() {
+            const walking = people.filter(p => p.state === 'walking').length;
+            const visiting = people.filter(p => p.state === 'visiting').length;
+            const resting = people.filter(p => p.state === 'resting').length;
+            
+            document.getElementById('totalPeople').textContent = people.length;
+            document.getElementById('walkingCount').textContent = walking;
+            document.getElementById('visitingCount').textContent = visiting;
+            document.getElementById('restingCount').textContent = resting;
+            
+            const minutes = Math.floor(simTime / 60);
+            const seconds = simTime % 60;
+            document.getElementById('simTime').textContent = 
+                `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+        }
+        
+        function updatePeopleList() {
+            const list = document.getElementById('peopleList');
+            const recentPeople = people.slice(0, 10);
+            
+            list.innerHTML = recentPeople.map(person => `
+                <div class="person-card ${person.state}">
+                    <strong>Человек #${person.id}</strong><br>
+                    ${person.getStateName()} → ${person.targetLandmark ? person.targetLandmark.name : '?'}<br>
+                    <div class="metrics">
+                        <span>❤️ ${person.metrics.heartRate.toFixed(0)}</span>
+                        <span>🌡️ ${person.metrics.temperature.toFixed(1)}</span>
+                        <span>💨 ${person.metrics.co2.toFixed(0)}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function simulationStep() {
+            people.forEach(person => person.update());
+            updatePeopleMarkers();
+            updateStats();
+            updatePeopleList();
+            simTime++;
+        }
+        
+        function toggleSimulation() {
+            const btn = document.getElementById('startBtn');
+            
+            if (simulationRunning) {
+                clearInterval(simulationInterval);
+                simulationRunning = false;
+                btn.textContent = '▶️ Старт';
+                btn.classList.remove('active');
+            } else {
+                simulationInterval = setInterval(simulationStep, 100);
+                simulationRunning = true;
+                btn.textContent = '⏸️ Пауза';
+                btn.classList.add('active');
+            }
+        }
+        
+        function resetSimulation() {
+            if (simulationRunning) {
+                toggleSimulation();
+            }
+            simTime = 0;
+            createPeople(totalPeople);
+            updateStats();
+            updatePeopleList();
+        }
+        
+        function exportData() {
+            const data = {
+                timestamp: new Date().toISOString(),
+                simulationTime: simTime,
+                totalPeople: people.length,
+                people: people.map(p => ({
+                    id: p.id,
+                    state: p.state,
+                    lat: p.lat,
+                    lng: p.lng,
+                    currentLandmark: p.currentLandmark?.name || null,
+                    targetLandmark: p.targetLandmark?.name || null,
+                    metrics: p.metrics
+                })),
+                landmarks: landmarks
+            };
+            
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `spb_simulation_${Date.now()}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        // Обработчики событий
+        document.getElementById('peopleCount').addEventListener('input', (e) => {
+            totalPeople = parseInt(e.target.value);
+            document.getElementById('peopleCountValue').textContent = totalPeople;
+            if (!simulationRunning) {
+                createPeople(totalPeople);
+            }
+        });
+        
+        document.getElementById('simSpeed').addEventListener('input', (e) => {
+            simSpeed = parseInt(e.target.value);
+            document.getElementById('speedValue').textContent = simSpeed + 'x';
+        });
+        
+        // Инициализация
+        initMap();
+        createPeople(totalPeople);
+        updateStats();
+        updatePeopleList();
+    </script>
+</body>
+</html>
