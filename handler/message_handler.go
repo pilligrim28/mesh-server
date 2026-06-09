@@ -13,9 +13,15 @@ import (
 	"mesh-server/repository"
 )
 
+// MeshSender отправляет сообщения в mesh-сеть через ESP32-хаб.
+type MeshSender interface {
+	SendMessage(ctx context.Context, toNode, text string) error
+}
+
 type MessageHandler struct {
 	messageRepo *repository.MessageRepository
 	esp32Client *client.ESP32Client
+	meshSender  MeshSender
 	wsHandler   *WebSocketHandler
 }
 
@@ -25,6 +31,11 @@ func NewMessageHandler(messageRepo *repository.MessageRepository, esp32Client *c
 		esp32Client: esp32Client,
 		wsHandler:   wsHandler,
 	}
+}
+
+// SetMeshSender устанавливает отправителя для mesh-сети (ESP32-хаб).
+func (h *MessageHandler) SetMeshSender(sender MeshSender) {
+	h.meshSender = sender
 }
 
 func (h *MessageHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -57,19 +68,25 @@ func (h *MessageHandler) Create(w http.ResponseWriter, r *http.Request) {
 		msg.SentAt = time.Now()
 	}
 
-	// Отправка сообщения на ESP32 если клиент настроен
-	if h.esp32Client != nil && msg.Direction == "outbound" {
-		go func() {
+	// Отправка сообщения в mesh через ESP32-хаб или напрямую на ESP32
+	if msg.Direction == "outbound" && (h.meshSender != nil || h.esp32Client != nil) {
+		go func(outbound models.Message) {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
-			
-			_, err := h.esp32Client.SendMessage(ctx, &msg)
-			if err != nil {
-				log.Printf("Failed to send message to ESP32: %v", err)
-			} else {
-				log.Printf("Message sent to ESP32: %s", msg.Text)
+
+			var err error
+			if h.meshSender != nil {
+				err = h.meshSender.SendMessage(ctx, outbound.ToNode, outbound.Text)
+			} else if h.esp32Client != nil {
+				_, err = h.esp32Client.SendMessage(ctx, &outbound)
 			}
-		}()
+
+			if err != nil {
+				log.Printf("Failed to send message to mesh: %v", err)
+			} else {
+				log.Printf("Message sent to mesh: %s", outbound.Text)
+			}
+		}(msg)
 	}
 
 	if err := h.messageRepo.Create(&msg); err != nil {

@@ -15,10 +15,10 @@ import (
 
 // HealbeHandler обрабатывает HTTP запросы для интеграции с часами Healbe
 type HealbeHandler struct {
-	healbeClient  *client.HealbeClient
-	metricsRepo   *repository.MetricsRepository
-	deviceRepo    *repository.DeviceRepository
-	wsHandler     *WebSocketHandler
+	healbeClient *client.HealbeClient
+	healbeRepo   *repository.HealbeRepository
+	deviceRepo   *repository.DeviceRepository
+	wsHandler    *WebSocketHandler
 
 	// Для передачи в Meshtastic
 	meshtasticClient *client.ESP32Client
@@ -26,14 +26,14 @@ type HealbeHandler struct {
 
 // NewHealbeHandler создает новый handler для Healbe
 func NewHealbeHandler(
-	metricsRepo *repository.MetricsRepository,
+	healbeRepo *repository.HealbeRepository,
 	deviceRepo *repository.DeviceRepository,
 	wsHandler *WebSocketHandler,
 ) *HealbeHandler {
 	return &HealbeHandler{
-		metricsRepo: metricsRepo,
-		deviceRepo:  deviceRepo,
-		wsHandler:   wsHandler,
+		healbeRepo: healbeRepo,
+		deviceRepo: deviceRepo,
+		wsHandler:  wsHandler,
 	}
 }
 
@@ -102,7 +102,7 @@ func (h *HealbeHandler) ConnectToHealbe(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Создаем клиент Healbe
-	h.healbeClient = client.NewHealbeClient(req.MAC, h.metricsRepo, h.deviceRepo)
+	h.healbeClient = client.NewHealbeClient(req.MAC, h.healbeRepo, h.deviceRepo)
 
 	// Устанавливаем callback для получения данных
 	h.healbeClient.SetDataCallback(h.onHealbeData)
@@ -178,7 +178,7 @@ func (h *HealbeHandler) GetHealbeData(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Получаем последние метрики из базы
-	metrics, err := h.metricsRepo.GetLatest(10)
+	metrics, err := h.healbeRepo.GetLatestForAll(10)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -250,6 +250,7 @@ func (h *HealbeHandler) ForwardToMeshtastic(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Логика включения/выключения пересылки
+	// TODO: реализовать логику включения/выключения пересылки
 
 	response := map[string]interface{}{
 		"forward_enabled": req.Enabled,

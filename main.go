@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"mesh-server/client"
@@ -115,10 +116,42 @@ func main() {
 	// Обработчик симулятора
 	simHandler := handler.NewSimulatorHandler(sim)
 
+	// Инициализация ESP32 Hub (мост между mesh-сетями и сервером)
+	hubURL := cfg.ESP32URL
+	if hubURL == "" {
+		hubURL = cfg.MeshtasticIP
+	}
+	if hubURL != "" && !strings.HasPrefix(hubURL, "http") {
+		hubURL = "http://" + hubURL
+	}
+
+	esp32HubService := service.NewESP32HubService(
+		deviceRepo,
+		messageRepo,
+		services.WSHandler,
+		service.ESP32HubConfig{
+			Enabled:      cfg.ESP32HubEnabled && hubURL != "",
+			DeviceURL:    hubURL,
+			PollInterval: cfg.ESP32HubPollInterval,
+		},
+	)
+	if err := esp32HubService.Start(context.Background()); err != nil {
+		log.Printf("Warning: Failed to start ESP32 hub service: %v", err)
+	}
+	defer esp32HubService.Stop()
+
+	if cfg.ESP32HubEnabled && hubURL != "" {
+		services.MessageHandler.SetMeshSender(esp32HubService)
+	}
+
+	esp32HubHandler := handler.NewESP32HubHandler(esp32HubService)
+
 	// Инициализация Healbe handler (часы GoBe)
 	healbeHandler := handler.NewHealbeHandler(metricsRepo, deviceRepo, services.WSHandler)
 	// Устанавливаем ESP32 клиент для пересылки в Meshtastic
-	if cfg.ESP32URL != "" {
+	if cfg.ESP32HubEnabled && hubURL != "" {
+		healbeHandler.SetMeshtasticClient(client.NewESP32Client(hubURL))
+	} else if cfg.ESP32URL != "" {
 		esp32Client := client.NewESP32Client(cfg.ESP32URL)
 		healbeHandler.SetMeshtasticClient(esp32Client)
 	}
@@ -407,6 +440,14 @@ func main() {
 	mux.HandleFunc("/api/mqtt/message", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			mqttHandler.SendMessage(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	mux.HandleFunc("/api/esp32/hub/status", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			esp32HubHandler.GetStatus(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
