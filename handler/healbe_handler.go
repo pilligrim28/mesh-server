@@ -6,19 +6,23 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"mesh-server/client"
+	"mesh-server/discovery"
 	"mesh-server/models"
 	"mesh-server/repository"
 )
 
 // HealbeHandler обрабатывает HTTP запросы для интеграции с часами Healbe
 type HealbeHandler struct {
-	healbeClient *client.HealbeClient
-	healbeRepo   *repository.HealbeRepository
-	deviceRepo   *repository.DeviceRepository
-	wsHandler    *WebSocketHandler
+	healbeClient  *client.HealbeClient
+	healbeRepo    *repository.HealbeRepository
+	metricsRepo   *repository.MetricsRepository
+	deviceRepo    *repository.DeviceRepository
+	wsHandler     *WebSocketHandler
+	bleScanner    *discovery.BLEScanner
 
 	// Для передачи в Meshtastic
 	meshtasticClient *client.ESP32Client
@@ -27,13 +31,17 @@ type HealbeHandler struct {
 // NewHealbeHandler создает новый handler для Healbe
 func NewHealbeHandler(
 	healbeRepo *repository.HealbeRepository,
+	metricsRepo *repository.MetricsRepository,
 	deviceRepo *repository.DeviceRepository,
 	wsHandler *WebSocketHandler,
+	bleScanner *discovery.BLEScanner,
 ) *HealbeHandler {
 	return &HealbeHandler{
-		healbeRepo: healbeRepo,
-		deviceRepo: deviceRepo,
-		wsHandler:  wsHandler,
+		healbeRepo:  healbeRepo,
+		metricsRepo: metricsRepo,
+		deviceRepo:  deviceRepo,
+		wsHandler:   wsHandler,
+		bleScanner:  bleScanner,
 	}
 }
 
@@ -50,32 +58,65 @@ func (h *HealbeHandler) ScanHealbeDevices(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// В реальной реализации здесь будет BLE сканирование
-	// Для демонстрации возвращаем тестовые данные
+	// Выполняем реальное BLE сканирование
+	var devices []map[string]interface{}
 
-	devices := []map[string]interface{}{
-		{
-			"address": "AA:BB:CC:DD:EE:01",
-			"name":    "GoBe3",
-			"rssi":    -65,
-			"model":   "GoBe3",
-		},
-		{
-			"address": "AA:BB:CC:DD:EE:02",
-			"name":    "GoBe U",
-			"rssi":    -72,
-			"model":   "GoBe U",
-		},
+	if h.bleScanner != nil {
+		// Сканируем BLE устройства
+		bleDevices := h.bleScanner.GetAllBLEDevices()
+
+		// Фильтруем только устройства Healbe
+		for _, device := range bleDevices {
+			if isHealbeDevice(device.Name) {
+				model := detectHealbeModel(device.Name)
+				devices = append(devices, map[string]interface{}{
+					"address": device.Address,
+					"name":    device.Name,
+					"rssi":    device.RSSI,
+					"model":   model,
+				})
+			}
+		}
+	}
+
+	// Если устройства не найдены, возвращаем информативное сообщение
+	message := fmt.Sprintf("Найдено устройств Healbe: %d", len(devices))
+	if len(devices) == 0 {
+		message = "Устройства Healbe не найдены. Убедитесь, что часы включены и находятся в режиме сопряжения."
 	}
 
 	response := map[string]interface{}{
 		"devices": devices,
 		"count":   len(devices),
-		"message": "Найдено устройств Healbe: " + string(rune('0'+len(devices))),
+		"message": message,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(response)
+}
+
+// isHealbeDevice проверяет является ли устройство Healbe
+func isHealbeDevice(name string) bool {
+	lowerName := strings.ToLower(name)
+	return strings.Contains(lowerName, "healbe") ||
+		strings.Contains(lowerName, "gobe") ||
+		strings.Contains(lowerName, "gobe3") ||
+		strings.Contains(lowerName, "gobe u")
+}
+
+// detectHealbeModel определяет модель устройства Healbe
+func detectHealbeModel(name string) string {
+	lowerName := strings.ToLower(name)
+	if strings.Contains(lowerName, "gobe3") || strings.Contains(lowerName, "gobe 3") {
+		return "GoBe3"
+	}
+	if strings.Contains(lowerName, "gobe u") {
+		return "GoBe U"
+	}
+	if strings.Contains(lowerName, "gobe2") || strings.Contains(lowerName, "gobe 2") {
+		return "GoBe2"
+	}
+	return "GoBe"
 }
 
 // ConnectToHealbe подключается к часам Healbe
