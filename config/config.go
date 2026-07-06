@@ -20,6 +20,8 @@ type Config struct {
 	MQTTPassword         string
 	MQTTRootTopic        string
 	MQTTMapReporting     bool
+	ESP32HubEnabled      bool
+	ESP32HubPollInterval int
 }
 
 func Load() *Config {
@@ -38,6 +40,8 @@ func Load() *Config {
 		MQTTPassword:       getEnv("MQTT_PASSWORD", "large4cats"),
 		MQTTRootTopic:      getEnv("MQTT_ROOT_TOPIC", "msh/RU"),
 		MQTTMapReporting:   getEnvBool("MQTT_MAP_REPORTING", false),
+		ESP32HubEnabled:    getEnvBool("ESP32_HUB_ENABLED", true),
+		ESP32HubPollInterval: getEnvInt("ESP32_HUB_POLL_INTERVAL", 5),
 	}
 	return cfg
 }

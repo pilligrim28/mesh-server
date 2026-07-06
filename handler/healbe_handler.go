@@ -218,8 +218,8 @@ func (h *HealbeHandler) GetHealbeData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Получаем последние метрики всех устройств
-	metrics, err := h.metricsRepo.GetAllLatest()
+	// Получаем последние метрики из базы
+	metrics, err := h.healbeRepo.GetLatestForAll(10)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -291,6 +291,7 @@ func (h *HealbeHandler) ForwardToMeshtastic(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Логика включения/выключения пересылки
+	// TODO: реализовать логику включения/выключения пересылки
 
 	response := map[string]interface{}{
 		"forward_enabled": req.Enabled,
