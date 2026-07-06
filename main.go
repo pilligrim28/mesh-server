@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"mesh-server/database"
 	"mesh-server/discovery"
 	"mesh-server/handler"
+	"mesh-server/meshtastic"
 	"mesh-server/repository"
 	"mesh-server/service"
 	"mesh-server/simulator"
@@ -108,13 +110,46 @@ func main() {
 		defer bleScanner.Stop()
 	}
 
-	// Инициализация симулятора носимого устройства
-	sim := simulator.NewSimulator(deviceRepo, metricsRepo, alertRepo)
-	sim.Start(5 * time.Second) // Генерация данных каждые 5 секунд
-	defer sim.Stop()
+	// Инициализация симуляторов (8 штук)
+	const numSimulators = 8
+	simulators := make([]*simulator.Simulator, numSimulators)
+	for i := 0; i < numSimulators; i++ {
+		simulators[i] = simulator.NewSimulator(i, deviceRepo, metricsRepo, alertRepo)
+		simulators[i].Start(time.Duration(4+i) * time.Second) // 4-11 секунд
+	}
+	defer func() {
+		for _, s := range simulators {
+			s.Stop()
+		}
+	}()
 
 	// Обработчик симулятора
-	simHandler := handler.NewSimulatorHandler(sim)
+	simHandler := handler.NewSimulatorHandler(simulators)
+
+	// Запуск Meshtastic HTTP сервера (для приложения Meshtastic)
+	meshtasticServer := meshtastic.NewMeshtasticServer(deviceRepo, messageRepo)
+	go func() {
+		log.Printf("Meshtastic API server listening on :4403")
+		if err := http.ListenAndServe(":4403", meshtasticServer.GetMux()); err != nil {
+			log.Printf("Meshtastic server error: %v", err)
+		}
+	}()
+
+	// Запуск mDNS (объявление _meshtastic._tcp для обнаружения приложением)
+	mdnsServer := meshtastic.NewMDNSServer("meshtastic-hub", 4403)
+	if err := mdnsServer.Start(); err != nil {
+		log.Printf("Warning: mDNS not started: %v", err)
+	}
+	defer mdnsServer.Stop()
+
+	// Запуск BLE сервера (для обнаружения приложением Meshtastic через Bluetooth)
+	bleServer := meshtastic.NewBLEServer("Meshtastic Hub")
+	if cfg.EnableBluetooth {
+		if err := bleServer.Start(); err != nil {
+			log.Printf("Warning: BLE server not started: %v", err)
+		}
+	}
+	defer bleServer.Stop()
 
 	// Инициализация Healbe handler (часы GoBe)
 	healbeHandler := handler.NewHealbeHandler(healbeRepo, metricsRepo, deviceRepo, services.WSHandler, bleScanner)
@@ -459,11 +494,34 @@ func main() {
 		w.Write([]byte("OK"))
 	})
 
+	// BLE status
+	mux.HandleFunc("/api/ble/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(bleServer.GetInfo())
+	})
+
+	// mDNS status
+	mux.HandleFunc("/api/mdns/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(mdnsServer.GetInfo())
+	})
+
 	// Simulator API
 	mux.HandleFunc("/api/simulator/status", simHandler.Status)
+	mux.HandleFunc("/api/simulator/status/all", simHandler.StatusAll)
 	mux.HandleFunc("/api/simulator/start", simHandler.Start)
+	mux.HandleFunc("/api/simulator/start/all", simHandler.StartAll)
 	mux.HandleFunc("/api/simulator/stop", simHandler.Stop)
+	mux.HandleFunc("/api/simulator/stop/all", simHandler.StopAll)
 	mux.HandleFunc("/api/simulator/event", simHandler.Event)
+	mux.HandleFunc("/api/simulator/route", simHandler.Route)
+	mux.HandleFunc("/api/simulator/speed", simHandler.SetSpeed)
+	mux.HandleFunc("/api/simulator/locations", simHandler.Locations)
+	mux.HandleFunc("/api/simulator/routes", simHandler.Routes)
+	mux.HandleFunc("/api/simulator/history", simHandler.RouteHistory)
+	mux.HandleFunc("/api/simulator/history/all", simHandler.RouteHistoryAll)
+	mux.HandleFunc("/api/simulator/clear-history", simHandler.ClearHistory)
+	mux.HandleFunc("/api/simulator/clear-history/all", simHandler.ClearHistoryAll)
 
 	// Healbe API (часы GoBe)
 	mux.HandleFunc("/api/healbe/scan", func(w http.ResponseWriter, r *http.Request) {

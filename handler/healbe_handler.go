@@ -218,8 +218,8 @@ func (h *HealbeHandler) GetHealbeData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Получаем последние метрики из базы
-	metrics, err := h.metricsRepo.GetLatest(10)
+	// Получаем последние метрики всех устройств
+	metrics, err := h.metricsRepo.GetAllLatest()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

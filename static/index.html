@@ -10,12 +10,26 @@
     <style>
         :root {
             --sidebar-width: 350px;
+            --primary-color: #4ecca3;
+            --secondary-color: #0f3460;
+            --danger-color: #dc3545;
+            --warning-color: #ffc107;
+            --info-color: #0dcaf0;
+            --bg-dark: #1a1a2e;
+            --bg-darker: #16213e;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
 
         body {
             overflow: hidden;
-            background: #1a1a2e;
+            background: var(--bg-dark);
             color: #eee;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
 
         #app {
@@ -26,21 +40,28 @@
         #map {
             flex: 1;
             height: 100%;
+            z-index: 1;
         }
 
         #sidebar {
             width: var(--sidebar-width);
-            background: #16213e;
-            border-left: 1px solid #0f3460;
+            background: var(--bg-darker);
+            border-left: 1px solid var(--secondary-color);
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            z-index: 2;
+            box-shadow: -5px 0 15px rgba(0,0,0,0.3);
         }
 
         .sidebar-header {
             padding: 1rem;
-            background: #0f3460;
-            border-bottom: 1px solid #1a1a2e;
+            background: linear-gradient(135deg, var(--secondary-color) 0%, var(--bg-dark) 100%);
+            border-bottom: 2px solid var(--primary-color);
+        }
+
+        .sidebar-header h5 {
+            color: var(--primary-color);
         }
 
         .sidebar-content {
@@ -49,145 +70,360 @@
             padding: 1rem;
         }
 
+        /* Стили для вкладок */
         .nav-tabs {
-            border-bottom: 1px solid #0f3460;
+            border-bottom: 1px solid var(--secondary-color);
+            padding: 0 1rem;
+            background: var(--bg-darker);
         }
 
         .nav-tabs .nav-link {
             color: #aaa;
             border: none;
             background: transparent;
-        }
-
-        .nav-tabs .nav-link.active {
-            color: #fff;
-            background: #0f3460;
-            border: none;
+            transition: all 0.3s ease;
+            padding: 0.75rem 1rem;
+            font-weight: 500;
         }
 
         .nav-tabs .nav-link:hover {
-            color: #fff;
+            color: var(--primary-color);
+            border-bottom: 2px solid var(--primary-color);
+            background: transparent;
         }
 
+        .nav-tabs .nav-link.active {
+            color: var(--primary-color);
+            background: transparent;
+            border-bottom: 2px solid var(--primary-color);
+        }
+
+        .nav-tabs .nav-link i {
+            margin-right: 8px;
+        }
+
+        /* Карточки */
         .card {
-            background: #1a1a2e;
-            border: 1px solid #0f3460;
+            background: linear-gradient(135deg, var(--bg-dark) 0%, var(--bg-darker) 100%);
+            border: 1px solid var(--secondary-color);
             margin-bottom: 1rem;
+            border-radius: 12px;
+            overflow: hidden;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
         }
 
         .card-header {
-            background: #0f3460;
-            border-bottom: 1px solid #1a1a2e;
+            background: linear-gradient(135deg, var(--secondary-color) 0%, var(--bg-dark) 100%);
+            border-bottom: 1px solid var(--primary-color);
             font-weight: 600;
+            padding: 0.75rem 1rem;
+            color: var(--primary-color) !important;
         }
 
+        .card-header i {
+            color: var(--primary-color) !important;
+        }
+
+        .card-header .bi-geo-alt {
+            color: var(--primary-color) !important;
+            margin-right: 8px;
+        }
+
+        .card-body {
+            color: #ddd;
+            padding: 0.75rem;
+        }
+
+        /* Метрики */
         .metric-value {
-            font-size: 1.5rem;
+            font-size: 1.8rem;
             font-weight: bold;
-            color: #4ecca3;
+            color: var(--primary-color);
         }
 
         .metric-label {
             font-size: 0.85rem;
             color: #aaa;
+            margin-top: 5px;
         }
 
+        /* Алерты */
         .alert-item {
             padding: 0.75rem;
-            border-radius: 0.5rem;
-            margin-bottom: 0.5rem;
+            border-radius: 8px;
+            margin-bottom: 0.75rem;
+            transition: all 0.3s ease;
         }
 
         .alert-critical {
-            background: rgba(220, 53, 69, 0.2);
-            border-left: 3px solid #dc3545;
+            background: rgba(220, 53, 69, 0.15);
+            border-left: 4px solid var(--danger-color);
         }
 
         .alert-warning {
-            background: rgba(255, 193, 7, 0.2);
-            border-left: 3px solid #ffc107;
+            background: rgba(255, 193, 7, 0.15);
+            border-left: 4px solid var(--warning-color);
         }
 
         .alert-info {
-            background: rgba(13, 202, 240, 0.2);
-            border-left: 3px solid #0dcaf0;
+            background: rgba(13, 202, 240, 0.15);
+            border-left: 4px solid var(--info-color);
         }
 
+        /* Сообщения */
         .message-item {
             padding: 0.75rem;
-            border-bottom: 1px solid #0f3460;
+            border-radius: 8px;
+            margin-bottom: 0.75rem;
+            transition: all 0.3s ease;
         }
 
         .message-outbound {
             background: rgba(78, 204, 163, 0.1);
+            border-left: 3px solid var(--primary-color);
         }
 
         .message-inbound {
             background: rgba(13, 202, 240, 0.1);
+            border-left: 3px solid var(--info-color);
         }
 
-        .device-marker {
-            background: #4ecca3;
-            border: 2px solid #fff;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-        }
-
+        /* Статусы */
         .status-online {
-            color: #4ecca3;
+            color: var(--primary-color);
+            font-weight: bold;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
         }
 
         .status-offline {
-            color: #dc3545;
+            color: var(--danger-color);
+            font-weight: bold;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
         }
 
+        /* Анимация пульса для онлайн статуса */
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(78, 204, 163, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(78, 204, 163, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(78, 204, 163, 0);
+            }
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+
+        .status-dot.online {
+            background-color: var(--primary-color);
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.offline {
+            background-color: var(--danger-color);
+        }
+
+        /* Статистика */
         .stat-card {
             text-align: center;
             padding: 1rem;
-            background: #0f3460;
-            border-radius: 0.5rem;
+            background: linear-gradient(135deg, var(--secondary-color) 0%, var(--bg-dark) 100%);
+            border-radius: 12px;
             margin-bottom: 1rem;
+            border: 1px solid var(--primary-color);
+            transition: transform 0.2s ease;
+        }
+
+        .stat-card:hover {
+            transform: scale(1.05);
         }
 
         .stat-value {
-            font-size: 2rem;
+            font-size: 2.5rem;
             font-weight: bold;
-            color: #4ecca3;
+            color: var(--primary-color);
         }
 
         .stat-label {
             font-size: 0.85rem;
             color: #aaa;
+            margin-top: 5px;
         }
 
+        /* Вкладки */
         .tab-pane {
             display: none;
+            animation: fadeIn 0.3s ease;
         }
 
         .tab-pane.active {
             display: block;
         }
 
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* WebSocket статус */
         .ws-status {
             display: inline-block;
-            width: 8px;
-            height: 8px;
+            width: 10px;
+            height: 10px;
             border-radius: 50%;
             margin-right: 0.5rem;
+            animation: pulse 2s infinite;
         }
 
         .ws-connected {
-            background: #4ecca3;
+            background: var(--primary-color);
         }
 
         .ws-disconnected {
-            background: #dc3545;
+            background: var(--danger-color);
+            animation: none;
         }
 
+        /* Скролл */
         .scroll-container {
             max-height: 400px;
             overflow-y: auto;
+        }
+
+        /* Кастомный скроллбар */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-darker);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--primary-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--secondary-color);
+        }
+
+        /* Кнопки */
+        .btn-primary {
+            background: var(--primary-color);
+            border: none;
+            color: var(--bg-dark);
+            font-weight: bold;
+        }
+
+        .btn-primary:hover {
+            background: #3db88c;
+            transform: translateY(-1px);
+        }
+
+        .btn-outline-primary {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        .btn-outline-primary:hover {
+            background: var(--primary-color);
+            color: var(--bg-dark);
+        }
+
+        /* Список устройств */
+        .device-item {
+            padding: 12px;
+            border-bottom: 1px solid var(--secondary-color);
+            transition: all 0.3s ease;
+        }
+
+        .device-item:hover {
+            background: rgba(78, 204, 163, 0.1);
+            transform: translateX(5px);
+        }
+
+        .device-name {
+            color: #4ecca3 !important;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .device-id {
+            color: #888 !important;
+            font-size: 0.75rem;
+        }
+
+        .device-status {
+            font-weight: bold;
+        }
+
+        /* Badge */
+        .badge-success {
+            background: var(--primary-color);
+            color: var(--bg-dark);
+        }
+
+        /* Формы */
+        .form-control, .form-select {
+            background: var(--bg-dark);
+            border: 1px solid var(--secondary-color);
+            color: #fff;
+        }
+
+        .form-control:focus, .form-select:focus {
+            background: var(--bg-dark);
+            border-color: var(--primary-color);
+            color: #fff;
+            box-shadow: 0 0 0 0.2rem rgba(78, 204, 163, 0.25);
+        }
+
+        .form-label {
+            color: #aaa;
+            font-size: 0.9rem;
+        }
+
+        .form-check-label {
+            color: #aaa;
+        }
+
+        .form-check-input:checked {
+            background-color: var(--primary-color);
+            border-color: var(--primary-color);
+        }
+
+        .text-muted {
+            color: #888 !important;
+        }
+
+        /* Цвет иконки broadcast */
+        .bi-broadcast {
+            color: #4ecca3 !important;
         }
     </style>
 </head>
@@ -201,8 +437,11 @@
                     <span id="wsStatus" class="ws-status ws-disconnected"></span>
                 </h5>
                 <small class="text-muted" id="lastUpdate">Обновление...</small>
-                <div class="mt-2">
-                    <span class="badge bg-success" id="simStatus">🟢 Симулятор активен</span>
+                <div class="mt-2 d-flex gap-1 flex-wrap">
+                    <span class="badge bg-success" id="simStatus">🟢 Симуляторы</span>
+                    <span class="badge bg-secondary" id="bleStatus">🔵 BLE</span>
+                    <span class="badge bg-info" id="mdnsStatus">📡 mDNS</span>
+                    <span class="badge bg-primary" id="meshtasticStatus">🔗 API :4403</span>
                 </div>
             </div>
 
@@ -220,7 +459,7 @@
                 <li class="nav-item">
                     <a class="nav-link" data-tab="alerts">
                         <i class="bi bi-bell"></i> Алерты
-                        <span id="alertBadge" class="badge bg-danger d-none">0</span>
+                        <span id="alertBadge" class="badge bg-danger d-none ms-1">0</span>
                     </a>
                 </li>
                 <li class="nav-item">
@@ -242,41 +481,46 @@
                         <div class="col-6">
                             <div class="stat-card">
                                 <div class="stat-value" id="deviceCount">0</div>
-                                <div class="stat-label">Устройств</div>
+                                <div class="stat-label">
+                                    <i class="bi bi-broadcast"></i> Устройств
+                                </div>
                             </div>
                         </div>
                         <div class="col-6">
                             <div class="stat-card">
                                 <div class="stat-value" id="alertCount">0</div>
-                                <div class="stat-label">Алертов</div>
+                                <div class="stat-label">
+                                    <i class="bi bi-bell"></i> Алертов
+                                </div>
                             </div>
                         </div>
                     </div>
 
                     <div class="card">
                         <div class="card-header">
-                            <i class="bi bi-geo-alt"></i> Устройства на карте
+                            <i class="bi bi-geo-alt"></i> 
+                            <span style="color: #4ecca3 !important;">Устройства на карте</span>
+                            <span class="float-end" id="onlineCount"></span>
                         </div>
-                        <div class="card-body scroll-container" id="deviceList"></div>
+                        <div class="card-body" id="deviceList" style="padding: 0;">
+                            <p class="text-muted text-center" style="padding: 20px;">Загрузка устройств...</p>
+                        </div>
                     </div>
 
                     <div class="card">
                         <div class="card-header">
-                            <i class="bi bi-person-badge"></i> Симулятор человека
-                        </div>
-                        <div class="card-body">
-                            <p class="small text-muted mb-2">Генерация тестовых данных носимого устройства</p>
-                            <div class="d-grid gap-2">
-                                <button class="btn btn-sm btn-outline-danger" onclick="generateEvent('high_heart_rate')">
-                                    <i class="bi bi-heart-pulse"></i> Высокий пульс
+                            <i class="bi bi-people-fill"></i> Симуляторы (8)
+                            <div class="float-end">
+                                <button class="btn btn-sm btn-success me-1" onclick="startAllSims()">
+                                    <i class="bi bi-play-fill"></i> Все
                                 </button>
-                                <button class="btn btn-sm btn-outline-warning" onclick="generateEvent('low_battery')">
-                                    <i class="bi bi-battery-low"></i> Низкий заряд
-                                </button>
-                                <button class="btn btn-sm btn-outline-info" onclick="generateEvent('signal_lost')">
-                                    <i class="bi bi-wifi-off"></i> Потеря сигнала
+                                <button class="btn btn-sm btn-danger" onclick="stopAllSims()">
+                                    <i class="bi bi-stop-fill"></i> Все
                                 </button>
                             </div>
+                        </div>
+                        <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+                            <div id="simList"></div>
                         </div>
                     </div>
                 </div>
@@ -289,7 +533,9 @@
                 <!-- Алерты -->
                 <div class="tab-pane" id="alerts-tab">
                     <div class="d-flex justify-content-between align-items-center mb-3">
-                        <h6 class="mb-0">Уведомления</h6>
+                        <h6 class="mb-0">
+                            <i class="bi bi-bell-fill" style="color: #ffc107;"></i> Уведомления
+                        </h6>
                         <button class="btn btn-sm btn-outline-primary" onclick="markAllAlertsRead()">
                             <i class="bi bi-check-all"></i> Все прочитано
                         </button>
@@ -300,7 +546,7 @@
                 <!-- Сообщения -->
                 <div class="tab-pane" id="messages-tab">
                     <div class="card">
-                        <div class="card-header bg-primary text-white">
+                        <div class="card-header">
                             <i class="bi bi-broadcast"></i> Подключение к ESP32 Meshtastic
                             <div class="float-end">
                                 <button class="btn btn-sm btn-light me-2" onclick="scanESP32()">
@@ -313,10 +559,9 @@
                         </div>
                         <div class="card-body">
                             <div id="esp32Status" class="alert alert-info mb-3">
-                                <i class="bi bi-info-circle"></i> Нажмите "Сканировать" для поиска устройств ESP32 в WiFi и Bluetooth
+                                <i class="bi bi-info-circle"></i> Нажмите "Сканировать" для поиска устройств ESP32
                             </div>
 
-                            <!-- Панель быстрого подключения -->
                             <div class="card bg-light mb-3">
                                 <div class="card-body py-2">
                                     <h6 class="mb-2"><i class="bi bi-lightning-charge"></i> Быстрое подключение</h6>
@@ -333,22 +578,17 @@
                                             </button>
                                         </div>
                                     </div>
-                                    <small class="text-muted">
-                                        Частые адреса: 192.168.4.1 (AP режим), 192.168.1.100 (WiFi клиент)
-                                    </small>
                                 </div>
                             </div>
 
                             <form id="messageForm">
                                 <div class="mb-2">
                                     <label class="form-label">От кого</label>
-                                    <input type="text" class="form-control" id="msgFrom" placeholder="!default (авто)" value="!default">
-                                    <small class="text-muted">Node ID устройства (оставьте !default для использования по умолчанию)</small>
+                                    <input type="text" class="form-control" id="msgFrom" placeholder="!default">
                                 </div>
                                 <div class="mb-2">
                                     <label class="form-label">Кому</label>
-                                    <input type="text" class="form-control" id="msgTo" placeholder="!87654321 (Node ID телефона)">
-                                    <small class="text-muted">Node ID получателя (телефона)</small>
+                                    <input type="text" class="form-control" id="msgTo" placeholder="!87654321">
                                 </div>
                                 <div class="mb-2">
                                     <label class="form-label">Сообщение</label>
@@ -360,14 +600,20 @@
                             </form>
                         </div>
                     </div>
-                    <h6>История сообщений</h6>
-                    <div id="messagesList" class="scroll-container"></div>
+                    <div class="card">
+                        <div class="card-header">
+                            <i class="bi bi-chat-dots"></i> История сообщений
+                        </div>
+                        <div class="card-body">
+                            <div id="messagesList" class="scroll-container" style="max-height: 300px;"></div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Healbe часы -->
                 <div class="tab-pane" id="healbe-tab">
                     <div class="card">
-                        <div class="card-header bg-info text-white">
+                        <div class="card-header">
                             <i class="bi bi-watch"></i> Healbe GoBe - Подключение
                             <div class="float-end">
                                 <button class="btn btn-sm btn-light me-2" onclick="scanHealbe()">
@@ -380,13 +626,12 @@
                         </div>
                         <div class="card-body">
                             <div id="healbeStatus" class="alert alert-info mb-3">
-                                <i class="bi bi-info-circle"></i> Нажмите "Сканировать" для поиска часов Healbe по Bluetooth
+                                <i class="bi bi-info-circle"></i> Нажмите "Сканировать" для поиска часов Healbe
                             </div>
 
                             <div class="mb-3">
                                 <label class="form-label">MAC адрес часов:</label>
                                 <input type="text" class="form-control" id="healbeMAC" placeholder="AA:BB:CC:DD:EE:FF">
-                                <small class="text-muted">MAC адрес часов Healbe GoBe</small>
                             </div>
 
                             <div class="form-check form-switch mb-3">
@@ -426,24 +671,6 @@
                                     <div class="metric-label"><i class="bi bi-clock"></i> Обновление</div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-
-                    <div class="card">
-                        <div class="card-header">
-                            <i class="bi bi-info-circle"></i> О часах Healbe
-                        </div>
-                        <div class="card-body">
-                            <p class="small text-muted mb-2">
-                                <strong>Healbe GoBe</strong> - умные часы с непрерывным мониторингом:
-                            </p>
-                            <ul class="small text-muted mb-0">
-                                <li>Пульс (HR) в реальном времени</li>
-                                <li>Уровень стресса (0-4)</li>
-                                <li>Качество сна</li>
-                                <li>Потребление калорий</li>
-                                <li>Баланс воды</li>
-                            </ul>
                         </div>
                     </div>
                 </div>

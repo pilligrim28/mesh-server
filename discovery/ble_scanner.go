@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -13,14 +14,14 @@ import (
 	"mesh-server/repository"
 )
 
-// BLEScanner сканирует Bluetooth LE устройства через Windows Runtime API
+// BLEScanner сканирует Bluetooth LE устройства
 type BLEScanner struct {
 	repo         *repository.DiscoveryRepository
 	isScanning   bool
 	mu           sync.Mutex
 	cancel       context.CancelFunc
 	scanInterval int
-	esp32MAC     string // Сохраняем найденный MAC адрес ESP32
+	esp32MAC     string
 }
 
 // BLEDevice представляет BLE устройство
@@ -106,13 +107,11 @@ func (s *BLEScanner) scanLoop(ctx context.Context) {
 }
 
 func (s *BLEScanner) scanOnce(ctx context.Context) {
-	// Сканируем BLE устройства через PowerShell
 	devices := s.scanBLEDevices(ctx)
 
 	for _, device := range devices {
 		s.foundDevice(device.Address, "bluetooth", device.RSSI, device.Name)
 
-		// Сохраняем MAC адрес если это ESP32
 		if device.IsESP32 {
 			s.esp32MAC = device.Address
 			log.Printf("Found ESP32 MAC: %s", device.Address)
@@ -120,11 +119,235 @@ func (s *BLEScanner) scanOnce(ctx context.Context) {
 	}
 }
 
-// scanBLEDevices сканирует BLE устройства через PowerShell
+// scanBLEDevices сканирует BLE устройства (Linux или Windows)
 func (s *BLEScanner) scanBLEDevices(ctx context.Context) []BLEDevice {
+	if runtime.GOOS == "linux" {
+		return s.scanBLELinux(ctx)
+	}
+	return s.scanBLEWindows(ctx)
+}
+
+// scanBLELinux сканирует BLE устройства через bluetoothctl / hcitool
+func (s *BLEScanner) scanBLELinux(ctx context.Context) []BLEDevice {
+	// Способ 1: bluetoothctl devices
+	devices := s.scanViaBluetoothctl(ctx)
+	if len(devices) > 0 {
+		return devices
+	}
+
+	// Способ 2: hcitool lescan (если bluetoothctl не дал результатов)
+	return s.scanViaHcitool(ctx)
+}
+
+// scanViaBluetoothctl сканирует через bluetoothctl devices
+func (s *BLEScanner) scanViaBluetoothctl(ctx context.Context) []BLEDevice {
 	var devices []BLEDevice
 
-	// PowerShell скрипт для сканирования BLE устройств
+	// Проверяем включён ли Bluetooth
+	if !s.isBluetoothEnabled() {
+		log.Println("Bluetooth is not enabled, attempting to power on...")
+		s.enableBluetooth()
+	}
+
+	// Получаем список уже известных BLE устройств
+	cmd := exec.Command("bluetoothctl", "devices")
+	output, err := cmd.Output()
+	if err != nil {
+		log.Printf("bluetoothctl devices error: %v", err)
+		return devices
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		device := s.parseBluetoothctlLine(line)
+		if device.Address != "" {
+			devices = append(devices, device)
+		}
+	}
+
+	// Запускаем сканирование на 5 секунд для обнаружения новых устройств
+	scanDevices := s.triggerScan(ctx, 5*time.Second)
+	devices = append(devices, scanDevices...)
+
+	return devices
+}
+
+// triggerScan запускает.bluetoothctl scan on, ждёт, затем scan off
+func (s *BLEScanner) triggerScan(ctx context.Context, duration time.Duration) []BLEDevice {
+	var devices []BLEDevice
+
+	// Включаем сканирование
+	startCmd := exec.Command("bluetoothctl", "scan", "on")
+	if err := startCmd.Start(); err != nil {
+		log.Printf("Failed to start bluetoothctl scan: %v", err)
+		return devices
+	}
+
+	// Ждём указанное время
+	select {
+	case <-ctx.Done():
+	case <-time.After(duration):
+	}
+
+	// Останавливаем сканирование
+	stopCmd := exec.Command("bluetoothctl", "scan", "off")
+	stopCmd.Run()
+
+	// Читаем результаты
+	cmd := exec.Command("bluetoothctl", "devices")
+	output, err := cmd.Output()
+	if err != nil {
+		return devices
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		device := s.parseBluetoothctlLine(line)
+		if device.Address != "" {
+			devices = append(devices, device)
+		}
+	}
+
+	return devices
+}
+
+// parseBluetoothctlLine парсит строку "Device AA:BB:CC:DD:EE:FF Name"
+func (s *BLEScanner) parseBluetoothctlLine(line string) BLEDevice {
+	device := BLEDevice{}
+
+	// Формат: "Device AA:BB:CC:DD:DD:EE Name" или "Device XX:XX:XX:XX:XX:XX"
+	if !strings.HasPrefix(line, "Device ") {
+		return device
+	}
+
+	parts := strings.SplitN(line, " ", 3)
+	if len(parts) < 2 {
+		return device
+	}
+
+	device.Address = parts[1]
+	if len(parts) >= 3 {
+		device.Name = parts[2]
+	}
+
+	// Проверяем является ли устройство ESP32/Meshtastic
+	lowerName := strings.ToLower(device.Name)
+	device.IsESP32 = strings.Contains(lowerName, "esp32") ||
+		strings.Contains(lowerName, "meshtastic") ||
+		strings.Contains(lowerName, "lilygo") ||
+		strings.Contains(lowerName, "heltec") ||
+		strings.Contains(lowerName, "tbeam") ||
+		strings.Contains(lowerName, "tlora")
+	device.IsMeshtastic = device.IsESP32
+
+	return device
+}
+
+// isBluetoothEnabled проверяет включён ли Bluetooth
+func (s *BLEScanner) isBluetoothEnabled() bool {
+	cmd := exec.Command("bluetoothctl", "show")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+
+	// Ищем "Powered: yes" или "Powered: no"
+	for _, line := range strings.Split(string(output), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Powered:") {
+			return strings.Contains(line, "yes")
+		}
+	}
+	return false
+}
+
+// enableBluetooth включает Bluetooth
+func (s *BLEScanner) enableBluetooth() {
+	cmd := exec.Command("bluetoothctl", "power", "on")
+	if err := cmd.Run(); err != nil {
+		log.Printf("Failed to power on bluetooth: %v", err)
+		return
+	}
+	log.Println("Bluetooth powered on")
+	time.Sleep(2 * time.Second)
+}
+
+// scanViaHcitool сканирует через hcitool lescan (альтернатива)
+func (s *BLEScanner) scanViaHcitool(ctx context.Context) []BLEDevice {
+	var devices []BLEDevice
+
+	// Проверяем доступность hcitool
+	if _, err := exec.LookPath("hcitool"); err != nil {
+		log.Println("hcitool not found, skipping")
+		return devices
+	}
+
+	// Запускаем lescan на 5 секунд
+	ctx2, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx2, "hcitool", "lescan")
+	output, err := cmd.CombinedOutput()
+	if err != nil && ctx2.Err() == nil {
+		log.Printf("hcitool lescan error: %v", err)
+		return devices
+	}
+
+	// Парсим вывод hcitool lescan
+	// Формат: "XX:XX:XX:XX:XX:XX (unknown)"
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "LE") || strings.HasPrefix(line, "OK") {
+			continue
+		}
+
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) < 1 {
+			continue
+		}
+
+		address := parts[0]
+		name := ""
+		if len(parts) >= 2 {
+			// Убираем скобки: "(unknown)" -> ""
+			name = strings.Trim(parts[1], "()")
+			if name == "unknown" || name == "" {
+				name = ""
+			}
+		}
+
+		isESP32 := strings.Contains(strings.ToLower(name), "esp32") ||
+			strings.Contains(strings.ToLower(name), "meshtastic") ||
+			strings.Contains(strings.ToLower(name), "lilygo") ||
+			strings.Contains(strings.ToLower(name), "heltec")
+
+		devices = append(devices, BLEDevice{
+			Address:      address,
+			Name:         name,
+			RSSI:         -50, // hcitool не показывает RSSI в lescan
+			IsESP32:      isESP32,
+			IsMeshtastic: isESP32,
+		})
+	}
+
+	return devices
+}
+
+// scanBLEWindows сканирует BLE устройства через PowerShell (оригинальная реализация)
+func (s *BLEScanner) scanBLEWindows(ctx context.Context) []BLEDevice {
+	var devices []BLEDevice
+
 	powerShellScript := `
 $watcher = [Windows.Devices.Bluetooth.Advertisement.BluetoothLEAdvertisementWatcher]::new()
 $devices = @()
@@ -149,12 +372,10 @@ foreach ($d in $devices) {
 }
 `
 
-	// Выполняем PowerShell скрипт
-	output, err := s.runPowerShell(powerShellScript)
+	output, err := s.runCommand("powershell", "-Command", powerShellScript)
 	if err != nil {
 		log.Printf("PowerShell BLE scan error: %v", err)
-		// Пробуем альтернативный метод через cmd
-		return s.scanBLEViaCMD()
+		return s.scanBLEWindowsFallback()
 	}
 
 	lines := strings.Split(output, "\n")
@@ -174,7 +395,6 @@ foreach ($d in $devices) {
 		rssi := 0
 		fmt.Sscanf(parts[2], "%d", &rssi)
 
-		// Проверяем является ли устройство ESP32 или Meshtastic
 		isESP32 := strings.Contains(strings.ToLower(name), "esp32") ||
 			strings.Contains(strings.ToLower(name), "meshtastic") ||
 			strings.Contains(strings.ToLower(name), "lilygo") ||
@@ -192,22 +412,20 @@ foreach ($d in $devices) {
 	return devices
 }
 
-// scanBLEViaCMD альтернативный метод сканирования через cmd
-func (s *BLEScanner) scanBLEViaCMD() []BLEDevice {
+// scanBLEWindowsFallback альтернативный метод через Get-PnpDevice
+func (s *BLEScanner) scanBLEWindowsFallback() []BLEDevice {
 	var devices []BLEDevice
 
-	// Используем PowerShell для получения Bluetooth устройств
 	cmd := exec.Command("powershell", "-Command", `
 Get-PnpDevice -Class Bluetooth | Where-Object {$_.Status -eq 'OK'} | Select-Object FriendlyName
 `)
 
 	output, err := cmd.Output()
 	if err != nil {
-		log.Printf("CMD BLE scan error: %v", err)
+		log.Printf("Windows fallback BLE scan error: %v", err)
 		return devices
 	}
 
-	// Парсим вывод
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -220,7 +438,7 @@ Get-PnpDevice -Class Bluetooth | Where-Object {$_.Status -eq 'OK'} | Select-Obje
 
 		if isESP32 {
 			devices = append(devices, BLEDevice{
-				Address:      "UNKNOWN", // MAC адрес через CMD получить сложно
+				Address:      "UNKNOWN",
 				Name:         line,
 				RSSI:         -50,
 				IsESP32:      true,
@@ -232,9 +450,9 @@ Get-PnpDevice -Class Bluetooth | Where-Object {$_.Status -eq 'OK'} | Select-Obje
 	return devices
 }
 
-// runPowerShell выполняет PowerShell скрипт
-func (s *BLEScanner) runPowerShell(script string) (string, error) {
-	cmd := exec.Command("powershell", "-Command", script)
+// runCommand выполняет команду (powershell / bat / sh)
+func (s *BLEScanner) runCommand(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -258,7 +476,6 @@ func (s *BLEScanner) foundDevice(address, deviceType string, rssi int, name stri
 		DiscoveredAt: time.Now(),
 	}
 
-	// Проверяем, есть ли уже такое устройство
 	existing, err := s.repo.GetByAddress(discoveredDevice.Address)
 	if err != nil {
 		if err := s.repo.Create(discoveredDevice); err != nil {
@@ -285,12 +502,10 @@ func (s *BLEScanner) GetESP32MACAddress() (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Сначала пробуем сохраненный MAC
 	if s.esp32MAC != "" {
 		return s.esp32MAC, nil
 	}
 
-	// Ищем в базе данных
 	devices, err := s.repo.GetByType("bluetooth")
 	if err != nil {
 		return "", err

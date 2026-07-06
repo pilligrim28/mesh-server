@@ -7,6 +7,9 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -236,38 +239,14 @@ func (s *WiFiScanner) isMeshtasticDevice(ctx context.Context, ip string) bool {
 		if err != nil {
 			continue
 		}
-		defer resp.Body.Close()
+		resp.Body.Close()
 
-		// Проверяем заголовки и содержимое
-		if s.checkMeshtasticResponse(resp) {
+		// Проверяем заголовки — только если есть явные признаки Meshtastic
+		server := strings.ToLower(resp.Header.Get("Server"))
+		auth := strings.ToLower(resp.Header.Get("WWW-Authenticate"))
+		if strings.Contains(server, "meshtastic") || strings.Contains(auth, "meshtastic") {
 			return true
 		}
-	}
-
-	// Проверяем по MAC адресу (vendor OUI)
-	if s.checkMeshtasticMAC(ip) {
-		return true
-	}
-
-	return false
-}
-
-func (s *WiFiScanner) checkMeshtasticResponse(resp *http.Response) bool {
-	// Проверяем заголовки
-	server := resp.Header.Get("Server")
-	if strings.Contains(strings.ToLower(server), "meshtastic") {
-		return true
-	}
-
-	// Проверяем WWW-Authenticate заголовок (Meshtastic использует Basic Auth)
-	auth := resp.Header.Get("WWW-Authenticate")
-	if strings.Contains(strings.ToLower(auth), "meshtastic") {
-		return true
-	}
-
-	// Проверяем статус
-	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusUnauthorized {
-		return true
 	}
 
 	return false
@@ -311,13 +290,60 @@ func (s *WiFiScanner) getMACAddress(ip string) (string, error) {
 }
 
 func (s *WiFiScanner) readARPTable(ip string) (string, error) {
-	// Для Windows используем arp -a команду
-	// В реальном приложении лучше использовать syscall для вызова SendARP
-	// Но для простоты вернем пустой MAC
+	if runtime.GOOS == "linux" {
+		return s.readARPTableLinux(ip)
+	}
+	return s.readARPTableWindows(ip)
+}
 
-	// Примечание: В production лучше использовать библиотеку для ARP
-	// или системные вызовы для получения MAC адреса
-	return "", fmt.Errorf("ARP lookup not implemented")
+// readARPTableLinux читает ARP таблицу из /proc/net/arp на Linux
+func (s *WiFiScanner) readARPTableLinux(ip string) (string, error) {
+	data, err := os.ReadFile("/proc/net/arp")
+	if err != nil {
+		return "", fmt.Errorf("failed to read /proc/net/arp: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	for i, line := range lines {
+		if i == 0 {
+			continue // пропускаем заголовок
+		}
+		parts := strings.Fields(strings.TrimSpace(line))
+		if len(parts) >= 4 {
+			arpIP := parts[0]
+			mac := parts[3]
+
+			if arpIP == ip && mac != "00:00:00:00:00:00" {
+				return mac, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("MAC address not found in ARP table for %s", ip)
+}
+
+// readARPTableWindows читает ARP таблицу через arp -a на Windows
+func (s *WiFiScanner) readARPTableWindows(ip string) (string, error) {
+	cmd := exec.Command("arp", "-a", ip)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("arp command failed: %w", err)
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		parts := strings.Fields(strings.TrimSpace(line))
+		if len(parts) >= 2 {
+			arpIP := parts[0]
+			mac := parts[1]
+
+			if arpIP == ip && mac != "00-00-00-00-00-00" {
+				return mac, nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("MAC address not found in ARP table for %s", ip)
 }
 
 // GetNetworkInfo возвращает информацию о текущей сети

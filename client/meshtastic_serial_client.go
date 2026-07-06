@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
+	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -43,7 +46,7 @@ type SerialConfig struct {
 // DefaultSerialConfig конфигурация по умолчанию для Meshtastic
 func DefaultSerialConfig() SerialConfig {
 	return SerialConfig{
-		Port:     "", // Нужно указать при создании
+		Port:     "",
 		BaudRate: 115200,
 	}
 }
@@ -71,7 +74,6 @@ func (c *MeshtasticSerialClient) Connect(ctx context.Context) error {
 		return fmt.Errorf("не указан COM-порт")
 	}
 
-	// Конфигурация последовательного порта
 	mode := &serial.Mode{
 		BaudRate: int(c.baudRate),
 		DataBits: 8,
@@ -87,10 +89,8 @@ func (c *MeshtasticSerialClient) Connect(ctx context.Context) error {
 	c.conn = conn
 	c.connected = true
 
-	// Создаем контекст для фонового чтения
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 
-	// Запускаем фоновое чтение сообщений
 	go c.readLoop()
 
 	log.Printf("Meshtastic Serial: подключен к %s", c.port)
@@ -106,12 +106,10 @@ func (c *MeshtasticSerialClient) Disconnect() error {
 		return nil
 	}
 
-	// Останавливаем фоновое чтение
 	if c.cancel != nil {
 		c.cancel()
 	}
 
-	// Закрываем соединение
 	if c.conn != nil {
 		if err := c.conn.Close(); err != nil {
 			return err
@@ -151,7 +149,6 @@ func (c *MeshtasticSerialClient) readLoop() {
 				continue
 			}
 
-			// Парсим сообщение Meshtastic
 			msg := c.parseMessage(line)
 			if msg != nil {
 				select {
@@ -165,12 +162,7 @@ func (c *MeshtasticSerialClient) readLoop() {
 }
 
 // parseMessage парсит строку в сообщение
-// Meshtastic отправляет данные в формате:
-// от !12345678: Текст сообщения
 func (c *MeshtasticSerialClient) parseMessage(line string) *SerialMessage {
-	// Простой парсинг формата Meshtastic
-	// Пример: "from !12345678: Hello" или "from !12345678 to !87654321: Hello"
-	
 	if !strings.Contains(line, "from !") {
 		return nil
 	}
@@ -179,15 +171,13 @@ func (c *MeshtasticSerialClient) parseMessage(line string) *SerialMessage {
 		Inbound: true,
 	}
 
-	// Удаляем префикс "from "
 	parts := strings.SplitN(line, "from !", 2)
 	if len(parts) < 2 {
 		return nil
 	}
 
 	rest := parts[1]
-	
-	// Извлекаем FromNode (до пробела или ":")
+
 	nodeParts := strings.SplitN(rest, ":", 2)
 	if len(nodeParts) < 2 {
 		return nil
@@ -200,10 +190,8 @@ func (c *MeshtasticSerialClient) parseMessage(line string) *SerialMessage {
 
 	msg.FromNode = "!" + strings.TrimSpace(fromParts[0])
 
-	// Извлекаем текст сообщения
 	textParts := strings.SplitN(nodeParts[1], "to !", 2)
 	if len(textParts) > 1 {
-		// Есть "to" адресат
 		toAndText := strings.SplitN(textParts[1], ":", 2)
 		if len(toAndText) >= 2 {
 			msg.ToNode = "!" + strings.TrimSpace(toAndText[0])
@@ -230,9 +218,6 @@ func (c *MeshtasticSerialClient) SendMessage(ctx context.Context, toNode, text s
 		return fmt.Errorf("соединение не установлено")
 	}
 
-	// Формируем команду для Meshtastic
-	// Meshtastic принимает команды в формате:
-	// sendtext <текст> --to <node_id>
 	command := fmt.Sprintf("sendtext %s --to %s\n", text, toNode)
 
 	_, err := c.conn.Write([]byte(command))
@@ -270,6 +255,12 @@ func (c *MeshtasticSerialClient) SetPort(port string) {
 
 // ScanForDevices сканирует доступные COM-порты для поиска Meshtastic устройств
 func ScanForDevices() ([]string, error) {
+	// На Linux сначала проверяем стандартные пути USB-serial
+	if runtime.GOOS == "linux" {
+		return scanLinuxPorts()
+	}
+
+	// На Windows/macOS используем go.bug.st/serial
 	ports, err := serial.GetPortsList()
 	if err != nil {
 		return nil, err
@@ -283,7 +274,6 @@ func ScanForDevices() ([]string, error) {
 		}
 	}
 
-	// Если не нашли Meshtastic, вернем все доступные порты
 	if len(found) == 0 {
 		return ports, nil
 	}
@@ -291,8 +281,83 @@ func ScanForDevices() ([]string, error) {
 	return found, nil
 }
 
+// scanLinuxPorts сканирует COM-порты на Linux
+func scanLinuxPorts() ([]string, error) {
+	// Стандартные пути Linux USB-serial устройств
+	linuxPatterns := []string{
+		"/dev/ttyUSB*",  // CP210x, CH340, FTDI
+		"/dev/ttyACM*",  // Arduino, CDC ACM
+		"/dev/ttyS*",    // Hardware serial ports
+	}
+
+	var allPorts []string
+	seen := make(map[string]bool)
+
+	for _, pattern := range linuxPatterns {
+		matches, err := filepathGlob(pattern)
+		if err != nil {
+			continue
+		}
+		for _, port := range matches {
+			if !seen[port] {
+				seen[port] = true
+				allPorts = append(allPorts, port)
+			}
+		}
+	}
+
+	// Попробуем получить порты через go.bug.st/serial
+	if serialPorts, err := serial.GetPortsList(); err == nil {
+		for _, port := range serialPorts {
+			if !seen[port] {
+				seen[port] = true
+				allPorts = append(allPorts, port)
+			}
+		}
+	}
+
+	// Проверяем какие из них являются Meshtastic
+	found := make([]string, 0)
+	for _, port := range allPorts {
+		if isMeshtasticPort(port) {
+			found = append(found, port)
+		}
+	}
+
+	// Если Meshtastic не нашли, вернём все порты чтобы пользователь мог выбрать
+	if len(found) == 0 {
+		return allPorts, nil
+	}
+
+	return found, nil
+}
+
+// filepathGlob обёртка для filepath.Glob
+func filepathGlob(pattern string) ([]string, error) {
+	cmd := exec.Command("ls", pattern)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
+	result := make([]string, 0)
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			result = append(result, line)
+		}
+	}
+	return result, nil
+}
+
 // isMeshtasticPort проверяет является ли COM-порт устройством Meshtastic
 func isMeshtasticPort(port string) bool {
+	// Проверяем существует ли файл устройства
+	if _, err := os.Stat(port); os.IsNotExist(err) {
+		return false
+	}
+
 	mode := &serial.Mode{
 		BaudRate: 115200,
 		DataBits: 8,
@@ -306,9 +371,8 @@ func isMeshtasticPort(port string) bool {
 	}
 	defer conn.Close()
 
-	// Устанавливаем таймаут
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	// Ждём немного чтобы устройство было готово
+	time.Sleep(100 * time.Millisecond)
 
 	// Отправляем тестовую команду
 	_, err = conn.Write([]byte("version\n"))
@@ -316,34 +380,34 @@ func isMeshtasticPort(port string) bool {
 		return false
 	}
 
-	// Читаем ответ
+	// Читаем ответ с таймаутом через goroutine
 	buffer := make([]byte, 1024)
-	
-	// Устанавливаем дедлайн для чтения
-	readCtx, readCancel := context.WithTimeout(ctx, 1*time.Second)
-	defer readCancel()
-
-	done := make(chan bool, 1)
-	var n int
-	var readErr error
+	done := make(chan struct {
+		n   int
+		err error
+	}, 1)
 
 	go func() {
-		n, readErr = conn.Read(buffer)
-		done <- true
+		n, err := conn.Read(buffer)
+		done <- struct {
+			n   int
+			err error
+		}{n, err}
 	}()
 
 	select {
-	case <-readCtx.Done():
+	case <-time.After(2 * time.Second):
 		return false
-	case <-done:
-		if readErr != nil {
+	case result := <-done:
+		if result.err != nil {
 			return false
 		}
-		response := string(buffer[:n])
-		// Meshtastic обычно отвечает версией прошивки
-		return strings.Contains(response, "Meshtastic") || 
-		       strings.Contains(response, "firmware") ||
-		       len(response) > 10
+		response := string(buffer[:result.n])
+		return strings.Contains(response, "Meshtastic") ||
+			strings.Contains(response, "firmware") ||
+			strings.Contains(response, "meshtastic") ||
+			strings.Contains(response, "Version") ||
+			len(response) > 10
 	}
 }
 
@@ -359,19 +423,15 @@ func (c *MeshtasticSerialClient) parseBinaryMessage(data []byte) (*SerialMessage
 		return nil, fmt.Errorf("слишком короткие данные")
 	}
 
-	// Проверка magic bytes
 	if data[0] != MESHTASTIC_MAGIC1 || data[1] != MESHTASTIC_MAGIC2 {
 		return nil, fmt.Errorf("неверные magic bytes")
 	}
 
-	// Читаем длину payload
 	length := binary.LittleEndian.Uint16(data[2:4])
 
 	if len(data) < 4+int(length) {
 		return nil, fmt.Errorf("неполные данные")
 	}
 
-	// Здесь должен быть парсинг protobuf сообщения Meshtastic
-	// Для простоты возвращаем ошибку
 	return nil, fmt.Errorf("бинарный парсинг не реализован")
 }
