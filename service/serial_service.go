@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -11,31 +12,37 @@ import (
 	"mesh-server/repository"
 )
 
-// SerialService сервис для работы с Meshtastic через COM-порт
+// SerialService сервис для работы с Meshtastic через COM-порт (USB hub).
 type SerialService struct {
 	serialClient *client.MeshtasticSerialClient
 	messageRepo  *repository.MessageRepository
 	deviceRepo   *repository.DeviceRepository
+	broadcaster  Broadcaster
 	mu           sync.RWMutex
 	running      bool
 	ctx          context.Context
 	cancel       context.CancelFunc
 }
 
-// NewSerialService создает сервис для работы с COM-портом
-func NewSerialService(messageRepo *repository.MessageRepository, deviceRepo *repository.DeviceRepository) *SerialService {
+// NewSerialService создает сервис для работы с COM-портом.
+func NewSerialService(
+	messageRepo *repository.MessageRepository,
+	deviceRepo *repository.DeviceRepository,
+	broadcaster Broadcaster,
+) *SerialService {
 	return &SerialService{
 		messageRepo: messageRepo,
 		deviceRepo:  deviceRepo,
+		broadcaster: broadcaster,
 	}
 }
 
-// Start запускает сервис с указанным COM-портом
+// Start запускает сервис с указанным COM-портом.
 func (s *SerialService) Start(comPort string) error {
 	return s.Connect(context.Background(), comPort)
 }
 
-// Connect подключается к COM-порту
+// Connect подключается к COM-порту.
 func (s *SerialService) Connect(ctx context.Context, comPort string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -60,14 +67,13 @@ func (s *SerialService) Connect(ctx context.Context, comPort string) error {
 	s.ctx, s.cancel = context.WithCancel(context.Background())
 	s.running = true
 
-	// Запускаем обработку входящих сообщений
 	go s.processMessages()
 
-	log.Printf("SerialService запущен на %s", comPort)
+	log.Printf("SerialService запущен на %s (USB Meshtastic hub)", comPort)
 	return nil
 }
 
-// Stop останавливает сервис
+// Stop останавливает сервис.
 func (s *SerialService) Stop() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -91,7 +97,6 @@ func (s *SerialService) Stop() {
 	log.Println("SerialService остановлен")
 }
 
-// processMessages обрабатывает входящие сообщения
 func (s *SerialService) processMessages() {
 	if s.serialClient == nil {
 		return
@@ -111,26 +116,24 @@ func (s *SerialService) processMessages() {
 	}
 }
 
-// handleInboundMessage обрабатывает входящее сообщение
 func (s *SerialService) handleInboundMessage(msg client.SerialMessage) {
 	log.Printf("SerialService: получено сообщение от %s: %s", msg.FromNode, msg.Text)
 
-	// Получаем или создаем устройство для этого узла
 	device, err := s.deviceRepo.GetByNodeID(msg.FromNode)
 	if err != nil {
-		// Создаем новое устройство
 		device = &models.Device{
 			NodeID:   msg.FromNode,
-			Name:     "Meshtastic-" + msg.FromNode[1:], // Убираем "!"
+			Name:     "Meshtastic-" + msg.FromNode[1:],
 			LastSeen: time.Now(),
 		}
 		if err := s.deviceRepo.Create(device); err != nil {
 			log.Printf("SerialService: ошибка создания устройства: %v", err)
 			return
 		}
+	} else {
+		_ = s.deviceRepo.UpdateLastSeen(device.ID)
 	}
 
-	// Сохраняем сообщение
 	message := &models.Message{
 		DeviceID:  device.ID,
 		FromNode:  msg.FromNode,
@@ -146,29 +149,36 @@ func (s *SerialService) handleInboundMessage(msg client.SerialMessage) {
 	}
 
 	log.Printf("SerialService: сообщение сохранено в БД (ID: %d)", message.ID)
+
+	if s.broadcaster != nil {
+		s.broadcaster.Broadcast(map[string]interface{}{
+			"type":    "new_message",
+			"message": message,
+			"source":  "serial_hub",
+		})
+	}
 }
 
-// SendMessage отправляет сообщение через COM-порт
-func (s *SerialService) SendMessage(toNode, text string) error {
+// SendMessage отправляет сообщение в mesh через USB (реализует MeshSender).
+func (s *SerialService) SendMessage(ctx context.Context, toNode, text string) error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
 	if !s.running || s.serialClient == nil {
-		return nil // Сервис не запущен, игнорируем
+		return nil
 	}
 
-	ctx := context.Background()
 	return s.serialClient.SendMessage(ctx, toNode, text)
 }
 
-// IsConnected проверяет подключение
+// IsConnected проверяет подключение.
 func (s *SerialService) IsConnected() bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.running && s.serialClient != nil && s.serialClient.IsConnected()
 }
 
-// GetPort возвращает текущий COM-порт
+// GetPort возвращает текущий COM-порт.
 func (s *SerialService) GetPort() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -178,12 +188,41 @@ func (s *SerialService) GetPort() string {
 	return s.serialClient.GetPort()
 }
 
-// ScanPorts сканирует доступные COM-порты
+// GetStatus возвращает статус USB-хаба.
+func (s *SerialService) GetStatus() map[string]interface{} {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	status := map[string]interface{}{
+		"connected": s.running && s.serialClient != nil && s.serialClient.IsConnected(),
+		"port":      "",
+		"transport": "usb_serial",
+	}
+
+	if s.serialClient != nil {
+		status["port"] = s.serialClient.GetPort()
+		if nodeNum := s.serialClient.GetNodeNum(); nodeNum != 0 {
+			status["node_id"] = formatNodeID(nodeNum)
+		}
+	}
+
+	return status
+}
+
+func formatNodeID(num uint32) string {
+	return "!" + padHex(num)
+}
+
+func padHex(num uint32) string {
+	return fmt.Sprintf("%08x", num)
+}
+
+// ScanPorts сканирует доступные COM-порты.
 func (s *SerialService) ScanPorts() ([]string, error) {
 	return client.ScanForDevices()
 }
 
-// Disconnect отключается от COM-порта
+// Disconnect отключается от COM-порта.
 func (s *SerialService) Disconnect() error {
 	s.Stop()
 	return nil

@@ -107,7 +107,7 @@ func (s *BLEScanner) scanLoop(ctx context.Context) {
 
 func (s *BLEScanner) scanOnce(ctx context.Context) {
 	// Сканируем BLE устройства через PowerShell
-	devices := s.scanBLEDevices(ctx)
+	devices := s.scanBLEDevices(ctx, 5000)
 
 	for _, device := range devices {
 		s.foundDevice(device.Address, "bluetooth", device.RSSI, device.Name)
@@ -120,34 +120,60 @@ func (s *BLEScanner) scanOnce(ctx context.Context) {
 	}
 }
 
+// FormatBLEAddress приводит адрес к виду AA:BB:CC:DD:EE:FF.
+func FormatBLEAddress(addr string) string {
+	addr = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(addr), ":", ""))
+	if len(addr) != 12 {
+		return strings.ToUpper(strings.TrimSpace(addr))
+	}
+	var parts []string
+	for i := 0; i < 12; i += 2 {
+		parts = append(parts, addr[i:i+2])
+	}
+	return strings.Join(parts, ":")
+}
+
+// ScanBLEDevices выполняет однократное BLE-сканирование.
+func (s *BLEScanner) ScanBLEDevices(scanMs int) []BLEDevice {
+	if scanMs <= 0 {
+		scanMs = 5000
+	}
+	return s.scanBLEDevices(context.Background(), scanMs)
+}
+
+// GetAllBLEDevices возвращает все найденные BLE устройства.
+func (s *BLEScanner) GetAllBLEDevices() []BLEDevice {
+	return s.ScanBLEDevices(5000)
+}
+
 // scanBLEDevices сканирует BLE устройства через PowerShell
-func (s *BLEScanner) scanBLEDevices(ctx context.Context) []BLEDevice {
+func (s *BLEScanner) scanBLEDevices(ctx context.Context, scanMs int) []BLEDevice {
 	var devices []BLEDevice
 
-	// PowerShell скрипт для сканирования BLE устройств
-	powerShellScript := `
+	// PowerShell: ArrayList вместо += в обработчике событий (иначе список пустой).
+	powerShellScript := fmt.Sprintf(`
+$deviceList = New-Object System.Collections.ArrayList
 $watcher = [Windows.Devices.Bluetooth.Advertisement.BluetoothLEAdvertisementWatcher]::new()
-$devices = @()
-$timeout = 5000
 
 $watcher.add_Received({
     param($sender, $args)
-    $device = @{
+    $name = $args.Advertisement.LocalName
+    if ($null -eq $name) { $name = "" }
+    [void]$deviceList.Add([PSCustomObject]@{
         Address = $args.BluetoothAddress.ToString("X12")
-        Name = $args.Advertisement.LocalName
+        Name = $name
         RSSI = $args.RawSignalStrengthInDBm
-    }
-    $devices += $device
+    })
 })
 
 $watcher.Start()
-Start-Sleep -Milliseconds $timeout
+Start-Sleep -Milliseconds %d
 $watcher.Stop()
 
-foreach ($d in $devices) {
+foreach ($d in $deviceList) {
     Write-Output "$($d.Address)|$($d.Name)|$($d.RSSI)"
 }
-`
+`, scanMs)
 
 	// Выполняем PowerShell скрипт
 	output, err := s.runPowerShell(powerShellScript)
@@ -169,7 +195,7 @@ foreach ($d in $devices) {
 			continue
 		}
 
-		address := parts[0]
+		address := FormatBLEAddress(parts[0])
 		name := parts[1]
 		rssi := 0
 		fmt.Sscanf(parts[2], "%d", &rssi)
@@ -189,7 +215,23 @@ foreach ($d in $devices) {
 		})
 	}
 
-	return devices
+	return dedupeBLEDevices(devices)
+}
+
+func dedupeBLEDevices(devices []BLEDevice) []BLEDevice {
+	seen := make(map[string]BLEDevice, len(devices))
+	for _, d := range devices {
+		key := FormatBLEAddress(d.Address)
+		if existing, ok := seen[key]; !ok || d.RSSI > existing.RSSI {
+			d.Address = key
+			seen[key] = d
+		}
+	}
+	out := make([]BLEDevice, 0, len(seen))
+	for _, d := range seen {
+		out = append(out, d)
+	}
+	return out
 }
 
 // scanBLEViaCMD альтернативный метод сканирования через cmd
@@ -305,8 +347,3 @@ func (s *BLEScanner) GetESP32MACAddress() (string, error) {
 	return "", fmt.Errorf("ESP32 device not found")
 }
 
-// GetAllBLEDevices возвращает все найденные BLE устройства
-func (s *BLEScanner) GetAllBLEDevices() []BLEDevice {
-	ctx := context.Background()
-	return s.scanBLEDevices(ctx)
-}

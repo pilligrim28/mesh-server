@@ -187,9 +187,11 @@ func (c *MeshtasticHubClient) SendTextMessage(ctx context.Context, toNode, text 
 		To:   toNum,
 		From: 0,
 		Id:   uint32(time.Now().UnixNano() & 0xFFFFFFFF),
-		Decoded: &pb.Data{
-			Portnum: pb.PortNum_TEXT_MESSAGE_APP,
-			Payload: []byte(text),
+		PayloadVariant: &pb.MeshPacket_Decoded{
+			Decoded: &pb.Data{
+				Portnum: pb.PortNum_TEXT_MESSAGE_APP,
+				Payload: []byte(text),
+			},
 		},
 	}
 

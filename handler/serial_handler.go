@@ -13,7 +13,8 @@ type SerialAPI interface {
 	Disconnect() error
 	IsConnected() bool
 	GetPort() string
-	SendMessage(toNode, text string) error
+	GetStatus() map[string]interface{}
+	SendMessage(ctx context.Context, toNode, text string) error
 }
 
 // SerialHandler обрабатывает HTTP запросы для COM-порта (USB) API
@@ -127,9 +128,12 @@ func (h *SerialHandler) GetStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status := map[string]interface{}{
-		"connected": h.serialAPI.IsConnected(),
-		"port":      h.serialAPI.GetPort(),
+	status := h.serialAPI.GetStatus()
+	if status == nil {
+		status = map[string]interface{}{
+			"connected": h.serialAPI.IsConnected(),
+			"port":      h.serialAPI.GetPort(),
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -165,7 +169,7 @@ func (h *SerialHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := h.serialAPI.SendMessage(req.ToNode, req.Text)
+	err := h.serialAPI.SendMessage(r.Context(), req.ToNode, req.Text)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)

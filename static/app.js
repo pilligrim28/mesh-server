@@ -9,36 +9,46 @@ let alerts = [];
 let messages = [];
 let ws = null;
 let refreshInterval = null;
+let selectedDeviceId = null;
+let mapUserFocused = false;
+let mapInitialFitDone = false;
+let peopleSimZoneLayer = null;
+let zonePickMode = false;
+let zonePickMarker = null;
 
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
     initMap();
     initTabs();
+    initDeviceListClicks();
     initWebSocket();
     loadData();
     startAutoRefresh();
     checkSimulatorStatus();
     addStPetersburgPoints();
+    loadPeopleSimZone();
+
+    const fitAllBtn = document.getElementById('fitAllDevicesBtn');
+    if (fitAllBtn) {
+        fitAllBtn.addEventListener('click', fitAllDevicesOnMap);
+    }
+
+    initHealbeTab();
+    initPeopleSimZoneUI();
+    loadSystemStatus();
+    setInterval(loadSystemStatus, 10000);
 });
 
 // Карта
 function initMap() {
     map = L.map('map').setView([59.9343, 30.3351], 12);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors'
+    // CARTO Voyager — цветная карта (dark_all был ч/б для тёмной темы UI)
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+        subdomains: 'abcd',
+        maxZoom: 20
     }).addTo(map);
-
-    // Тёмная тема карты
-    fetch('https://basemaps.cartocdn.com/rastertiles/voyager_dark/{z}/{x}/{y}{r}.png')
-        .then(response => {
-            if (response.ok) {
-                L.tileLayer('https://basemaps.cartocdn.com/rastertiles/voyager_dark/{z}/{x}/{y}{r}.png', {
-                    attribution: '© OpenStreetMap © CARTO'
-                }).addTo(map);
-            }
-        })
-        .catch(() => {});
 }
 
 // Вкладки
@@ -155,8 +165,17 @@ async function loadMessages() {
 function updateMapMarkers() {
     devices.forEach(device => {
         if (device.latitude && device.longitude) {
+            const isSimPerson = (device.node_id || '').startsWith('!SIM_P');
             if (!markers[device.id]) {
-                const marker = L.marker([device.latitude, device.longitude]).addTo(map);
+                const markerOptions = isSimPerson
+                    ? { icon: L.divIcon({
+                        className: 'sim-person-marker',
+                        html: '<div style="background:#4ecca3;width:14px;height:14px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 6px rgba(78,204,163,0.8);"></div>',
+                        iconSize: [14, 14],
+                        iconAnchor: [7, 7]
+                    }) }
+                    : {};
+                const marker = L.marker([device.latitude, device.longitude], markerOptions).addTo(map);
                 marker.bindPopup(createDevicePopup(device));
                 markers[device.id] = marker;
             } else {
@@ -174,12 +193,13 @@ function updateMapMarkers() {
         }
     });
 
-    // Центрируем карту если есть устройства
-    if (devices.length > 0) {
+    // Центрируем карту только при первой загрузке
+    if (!mapUserFocused) {
         const validDevices = devices.filter(d => d.latitude && d.longitude);
-        if (validDevices.length > 0) {
+        if (validDevices.length > 0 && !mapInitialFitDone) {
             const bounds = validDevices.map(d => [d.latitude, d.longitude]);
             map.fitBounds(bounds, { padding: [50, 50] });
+            mapInitialFitDone = true;
         }
     }
 }
@@ -204,22 +224,117 @@ function createDevicePopup(device) {
     `;
 }
 
-function updateDeviceList() {
-    const container = document.getElementById('deviceList');
-    container.innerHTML = devices.map(device => {
-        const isOnline = device.last_seen && new Date(device.last_seen) > new Date(Date.now() - 5 * 60 * 1000);
+function initDeviceListClicks() {
+    document.addEventListener('click', (e) => {
+        const item = e.target.closest('[data-device-id]');
+        if (!item) {
+            return;
+        }
+
+        const deviceId = Number(item.dataset.deviceId);
+        focusDeviceOnMap(deviceId);
+    });
+}
+
+function isDeviceOnline(device) {
+    return device.last_seen && new Date(device.last_seen) > new Date(Date.now() - 5 * 60 * 1000);
+}
+
+function buildDeviceListHTML() {
+    if (devices.length === 0) {
+        return '<p class="text-muted text-center py-3">Нет клиентов в сети</p>';
+    }
+
+    const sortedDevices = [...devices].sort((a, b) => {
+        const aOnline = isDeviceOnline(a) ? 1 : 0;
+        const bOnline = isDeviceOnline(b) ? 1 : 0;
+        if (aOnline !== bOnline) {
+            return bOnline - aOnline;
+        }
+        return (a.name || a.node_id).localeCompare(b.name || b.node_id, 'ru');
+    });
+
+    return sortedDevices.map(device => {
+        const isOnline = isDeviceOnline(device);
+        const hasLocation = Boolean(device.latitude && device.longitude);
+        const isActive = selectedDeviceId === device.id;
+        const lastSeen = device.last_seen ? new Date(device.last_seen).toLocaleString('ru-RU') : 'Никогда';
+        const coordsText = hasLocation
+            ? `${device.latitude.toFixed(5)}, ${device.longitude.toFixed(5)}`
+            : 'Координаты неизвестны';
+
         return `
-            <div class="d-flex justify-content-between align-items-center p-2 border-bottom border-secondary">
-                <div>
-                    <strong>${escapeHtml(device.name || device.node_id)}</strong>
-                    <br><small class="text-muted">${escapeHtml(device.node_id)}</small>
+            <div class="device-list-item ${isActive ? 'active' : ''} ${hasLocation ? '' : 'no-location'}"
+                 data-device-id="${device.id}"
+                 title="${hasLocation ? 'Показать на карте' : 'Нет координат для отображения'}">
+                <div class="flex-grow-1">
+                    <div class="device-list-name">${escapeHtml(device.name || device.node_id)}</div>
+                    <div class="device-list-meta">${escapeHtml(device.node_id)}</div>
+                    <div class="device-list-coords">
+                        <i class="bi bi-geo-alt"></i> ${coordsText}
+                    </div>
                 </div>
-                <span class="${isOnline ? 'status-online' : 'status-offline'}">
-                    ${isOnline ? '●' : '○'}
-                </span>
+                <div class="device-list-status">
+                    <span class="${isOnline ? 'status-online' : 'status-offline'}">
+                        ${isOnline ? '● Онлайн' : '○ Офлайн'}
+                    </span>
+                    <span class="status-label">${lastSeen}</span>
+                </div>
             </div>
         `;
-    }).join('') || '<p class="text-muted text-center">Нет устройств</p>';
+    }).join('');
+}
+
+function updateDeviceList() {
+    const html = buildDeviceListHTML();
+    const overviewList = document.getElementById('deviceList');
+    const clientsList = document.getElementById('clientsList');
+
+    if (overviewList) {
+        overviewList.innerHTML = html;
+    }
+    if (clientsList) {
+        clientsList.innerHTML = html;
+    }
+}
+
+function focusDeviceOnMap(deviceId) {
+    const device = devices.find(d => d.id === deviceId);
+    if (!device) {
+        return;
+    }
+
+    selectedDeviceId = deviceId;
+    updateDeviceList();
+
+    if (!device.latitude || !device.longitude) {
+        return;
+    }
+
+    mapUserFocused = true;
+    map.flyTo([device.latitude, device.longitude], 17, {
+        animate: true,
+        duration: 0.8
+    });
+
+    window.setTimeout(() => {
+        if (markers[deviceId]) {
+            markers[deviceId].openPopup();
+        }
+    }, 700);
+}
+
+function fitAllDevicesOnMap() {
+    selectedDeviceId = null;
+    mapUserFocused = false;
+
+    const validDevices = devices.filter(d => d.latitude && d.longitude);
+    if (validDevices.length > 0) {
+        const bounds = validDevices.map(d => [d.latitude, d.longitude]);
+        map.fitBounds(bounds, { padding: [50, 50] });
+    }
+
+    updateDeviceList();
 }
 
 // Метрики
@@ -248,7 +363,7 @@ function updateMetricsDisplay() {
             <div class="card">
                 <div class="card-header">
                     <i class="bi bi-activity"></i> ${escapeHtml(device?.name || device?.node_id || `Device ${deviceId}`)}
-                    <small class="text-muted float-end">${timestamp}</small>
+                    <small class="float-end message-meta">${timestamp}</small>
                 </div>
                 <div class="card-body">
                     <div class="row text-center">
@@ -300,10 +415,10 @@ function updateAlertsDisplay() {
             <div class="alert-item alert-${alert.severity}">
                 <div class="d-flex justify-content-between">
                     <strong>${getAlertIcon(alert.type)} ${getAlertTitle(alert.type)}</strong>
-                    <small class="text-muted">${time}</small>
+                    <small class="message-meta">${time}</small>
                 </div>
                 <p class="mb-1">${escapeHtml(alert.message)}</p>
-                <small class="text-muted">
+                <small class="message-meta">
                     <i class="bi bi-broadcast"></i> ${escapeHtml(device?.name || device?.node_id || 'Unknown')}
                     ${!alert.is_read ? '<span class="badge bg-danger ms-2">Новый</span>' : ''}
                 </small>
@@ -363,21 +478,21 @@ function updateMessagesDisplay() {
         const isInbound = msg.direction === 'inbound';
 
         return `
-            <div class="message-item message-${msg.direction}" style="border-radius: 8px; margin-bottom: 8px; padding: 10px;">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <span class="badge bg-${isInbound ? 'info' : 'success'} mb-1">
+            <div class="message-item message-${msg.direction}">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div class="flex-grow-1">
+                        <span class="badge bg-${isInbound ? 'info' : 'success'} mb-2">
                             <i class="bi bi-${isInbound ? 'arrow-down' : 'arrow-up'}"></i>
                             ${isInbound ? 'Входящее' : 'Исходящее'}
                         </span>
-                        <p class="mb-1" style="font-size: 1rem;">${escapeHtml(msg.text)}</p>
-                        <small class="text-muted">
+                        <p class="mb-2 fw-semibold">${escapeHtml(msg.text)}</p>
+                        <div class="message-meta">
                             <i class="bi bi-person-circle"></i> ${escapeHtml(msg.from_node)}
-                            <i class="bi bi-arrow-right"></i>
+                            <i class="bi bi-arrow-right mx-1"></i>
                             ${escapeHtml(msg.to_node || 'Все')}
-                        </small>
+                        </div>
                     </div>
-                    <small class="text-muted">${time}</small>
+                    <small class="message-meta text-nowrap">${time}</small>
                 </div>
             </div>
         `;
@@ -449,7 +564,144 @@ function updateLastUpdate() {
 
 // Автообновление
 function startAutoRefresh() {
-    refreshInterval = setInterval(loadData, 10000); // Каждые 10 секунд
+    refreshInterval = setInterval(() => {
+        loadData();
+        loadPeopleSimZone();
+    }, 10000);
+}
+
+// Зона симуляции людей
+async function loadPeopleSimZone() {
+    try {
+        const response = await fetch(`${API_BASE}/api/people-sim/zone`);
+        const zone = await response.json();
+        if (!zone.center || !zone.radius_m) {
+            return;
+        }
+
+        fillZoneForm(zone);
+        drawPeopleSimZone(zone);
+
+        const statusEl = document.getElementById('zoneStatus');
+        if (statusEl) {
+            const outside = zone.outside_count ?? 0;
+            statusEl.textContent = `Радиус ${zone.radius_km} км · вне зоны: ${outside} · алерт через ${zone.alert_delay_minutes || 5} мин`;
+        }
+    } catch (error) {
+        console.warn('People sim zone not available:', error);
+    }
+}
+
+function fillZoneForm(zone) {
+    const latInput = document.getElementById('zoneLat');
+    const lonInput = document.getElementById('zoneLon');
+    const radiusInput = document.getElementById('zoneRadius');
+    if (latInput && zone.center) latInput.value = zone.center.lat;
+    if (lonInput && zone.center) lonInput.value = zone.center.lon;
+    if (radiusInput && zone.radius_km) radiusInput.value = zone.radius_km;
+}
+
+function drawPeopleSimZone(zone) {
+    if (peopleSimZoneLayer) {
+        map.removeLayer(peopleSimZoneLayer);
+    }
+
+    peopleSimZoneLayer = L.circle([zone.center.lat, zone.center.lon], {
+        radius: zone.radius_m,
+        color: '#ff6b6b',
+        weight: 2,
+        fillColor: '#4ecca3',
+        fillOpacity: 0.05,
+        dashArray: '10 8'
+    }).addTo(map);
+
+    peopleSimZoneLayer.bindPopup(
+        `<strong>Геозона</strong><br>Радиус: ${zone.radius_km} км<br>Алерт: через ${zone.alert_delay_minutes || 5} мин вне зоны`
+    );
+
+    if (zonePickMarker) {
+        zonePickMarker.setLatLng([zone.center.lat, zone.center.lon]);
+    }
+}
+
+function initPeopleSimZoneUI() {
+    const pickBtn = document.getElementById('pickZoneCenterBtn');
+    const applyBtn = document.getElementById('applyZoneBtn');
+
+    if (pickBtn) {
+        pickBtn.addEventListener('click', () => {
+            zonePickMode = !zonePickMode;
+            pickBtn.classList.toggle('btn-warning', zonePickMode);
+            pickBtn.classList.toggle('btn-outline-secondary', !zonePickMode);
+            const statusEl = document.getElementById('zoneStatus');
+            if (statusEl) {
+                statusEl.textContent = zonePickMode
+                    ? 'Кликните на карте для выбора центра зоны'
+                    : '';
+            }
+        });
+    }
+
+    if (applyBtn) {
+        applyBtn.addEventListener('click', applyPeopleSimZone);
+    }
+
+    map.on('click', (e) => {
+        if (!zonePickMode) return;
+        zonePickMode = false;
+        if (pickBtn) {
+            pickBtn.classList.remove('btn-warning');
+            pickBtn.classList.add('btn-outline-secondary');
+        }
+        document.getElementById('zoneLat').value = e.latlng.lat.toFixed(6);
+        document.getElementById('zoneLon').value = e.latlng.lng.toFixed(6);
+        if (!zonePickMarker) {
+            zonePickMarker = L.marker(e.latlng, {
+                icon: L.divIcon({
+                    className: 'zone-center-marker',
+                    html: '<div style="background:#ff6b6b;width:12px;height:12px;border-radius:50%;border:2px solid #fff;"></div>',
+                    iconSize: [12, 12],
+                    iconAnchor: [6, 6]
+                })
+            }).addTo(map);
+        } else {
+            zonePickMarker.setLatLng(e.latlng);
+        }
+        const statusEl = document.getElementById('zoneStatus');
+        if (statusEl) statusEl.textContent = 'Центр выбран — нажмите «Применить границу»';
+    });
+}
+
+async function applyPeopleSimZone() {
+    const lat = parseFloat(document.getElementById('zoneLat')?.value);
+    const lon = parseFloat(document.getElementById('zoneLon')?.value);
+    const radiusKm = parseFloat(document.getElementById('zoneRadius')?.value);
+    const statusEl = document.getElementById('zoneStatus');
+
+    if (!lat || !lon || !radiusKm || radiusKm <= 0) {
+        if (statusEl) statusEl.textContent = 'Заполните координаты и радиус';
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/api/people-sim/zone`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lat, lon, radius_km: radiusKm })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.message || 'Ошибка сохранения');
+        }
+        if (result.zone) {
+            drawPeopleSimZone(result.zone);
+            fillZoneForm(result.zone);
+        }
+        if (statusEl) statusEl.textContent = result.message || 'Граница обновлена';
+        loadData();
+    } catch (error) {
+        if (statusEl) statusEl.textContent = 'Ошибка: ' + error.message;
+    }
 }
 
 // Добавление точек Санкт-Петербурга
@@ -707,64 +959,199 @@ window.app = {
     disconnectHealbe: disconnectHealbe
 };
 
+// ===== System / Demo =====
+
+async function loadSystemStatus() {
+    try {
+        const response = await fetch(`${API_BASE}/api/system/status`);
+        const status = await response.json();
+
+        const demoBadge = document.getElementById('demoBadge');
+        const esp32Badge = document.getElementById('esp32Badge');
+        const demoBanner = document.getElementById('demoBanner');
+
+        if (status.demo_mode) {
+            if (demoBadge) demoBadge.classList.remove('d-none');
+            if (demoBanner) {
+                demoBanner.classList.remove('d-none');
+                demoBanner.textContent = status.demo_message || 'Демо-режим активен';
+            }
+            const modeSelect = document.getElementById('healbeViaMode');
+            if (modeSelect) {
+                modeSelect.value = 'demo';
+            }
+            startHealbeDataPolling();
+            startHealbeStatusPolling();
+        } else if (demoBadge) {
+            demoBadge.classList.add('d-none');
+        }
+
+        if (esp32Badge) {
+            if (status.serial_connected) {
+                esp32Badge.classList.remove('d-none');
+                esp32Badge.textContent = 'ESP32 ' + (status.serial_port || 'USB');
+                esp32Badge.className = 'badge bg-info text-dark';
+            } else {
+                esp32Badge.classList.remove('d-none');
+                esp32Badge.textContent = 'ESP32 не подключён';
+                esp32Badge.className = 'badge bg-secondary';
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load system status:', error);
+    }
+}
+
 // ===== Healbe GoBe Functions =====
+
+function normalizeHealbeMAC(mac) {
+    const cleaned = mac.trim().replace(/[^0-9a-fA-F]/g, '').toUpperCase();
+    if (cleaned.length !== 12) {
+        return mac.trim().toUpperCase();
+    }
+    return cleaned.match(/.{1,2}/g).join(':');
+}
+
+function isValidHealbeMAC(mac) {
+    return /^([0-9A-F]{2}:){5}[0-9A-F]{2}$/.test(normalizeHealbeMAC(mac));
+}
+
+function updateHealbeConnectButton() {
+    const macInput = document.getElementById('healbeMAC');
+    const connectBtn = document.getElementById('healbeConnectBtn');
+    if (!macInput || !connectBtn) {
+        return;
+    }
+    connectBtn.disabled = !isValidHealbeMAC(macInput.value);
+}
+
+function getHealbeViaMode() {
+    return document.getElementById('healbeViaMode')?.value || 'auto';
+}
+
+function healbeViaLabel(mode) {
+    switch (mode) {
+        case 'demo': return 'Демо';
+        case 'pc': return 'Bluetooth ПК';
+        case 'esp32': return 'ESP32 bridge';
+        default: return 'Авто';
+    }
+}
+
+function initHealbeTab() {
+    const macInput = document.getElementById('healbeMAC');
+    if (!macInput) {
+        return;
+    }
+
+    const savedMAC = localStorage.getItem('healbeMAC');
+    const savedMode = localStorage.getItem('healbeViaMode');
+    if (savedMAC) {
+        macInput.value = savedMAC;
+    } else if (!macInput.value.trim()) {
+        macInput.value = '8B:20:91:8E:F5:CB';
+    }
+    if (savedMode) {
+        const modeSelect = document.getElementById('healbeViaMode');
+        if (modeSelect) {
+            modeSelect.value = savedMode;
+        }
+    }
+
+    macInput.addEventListener('input', () => {
+        macInput.value = normalizeHealbeMAC(macInput.value);
+        updateHealbeConnectButton();
+    });
+
+    const modeSelect = document.getElementById('healbeViaMode');
+    if (modeSelect) {
+        modeSelect.addEventListener('change', () => {
+            localStorage.setItem('healbeViaMode', modeSelect.value);
+        });
+    }
+
+    updateHealbeConnectButton();
+    loadHealbeStatus();
+    startHealbeStatusPolling();
+}
 
 // Сканирование часов Healbe
 async function scanHealbe() {
     const statusDiv = document.getElementById('healbeStatus');
     const connectBtn = document.getElementById('healbeConnectBtn');
+    const macInput = document.getElementById('healbeMAC');
+    const viaMode = getHealbeViaMode();
+    const mac = normalizeHealbeMAC(macInput?.value || '');
 
     statusDiv.className = 'alert alert-warning';
-    statusDiv.innerHTML = '<i class="bi bi-hourglass-split"></i> Сканирование Bluetooth...';
-    connectBtn.disabled = true;
+    statusDiv.innerHTML = viaMode === 'esp32'
+        ? '<i class="bi bi-hourglass-split"></i> Сканирование Bluetooth на ПК (для ESP32 bridge не обязательно)...'
+        : '<i class="bi bi-hourglass-split"></i> Сканирование Bluetooth на ПК...';
 
     try {
-        const response = await fetch(`${API_BASE}/api/healbe/scan`);
+        const scanURL = mac
+            ? `${API_BASE}/api/healbe/scan?mac=${encodeURIComponent(mac)}`
+            : `${API_BASE}/api/healbe/scan`;
+        const response = await fetch(scanURL);
         const result = await response.json();
 
         if (result.count > 0 && result.devices.length > 0) {
             const device = result.devices[0];
-            document.getElementById('healbeMAC').value = device.address;
+            macInput.value = device.address;
+            localStorage.setItem('healbeMAC', device.address);
 
             statusDiv.className = 'alert alert-success';
             statusDiv.innerHTML = `
                 <i class="bi bi-check-circle"></i> <strong>Найдено:</strong> ${device.name}<br>
                 <small>MAC: ${device.address} (RSSI: ${device.rssi} dBm)</small>
             `;
-            connectBtn.disabled = false;
+        } else if ((viaMode === 'auto' || viaMode === 'esp32') && isValidHealbeMAC(mac)) {
+            statusDiv.className = 'alert alert-info';
+            statusDiv.innerHTML = `
+                <i class="bi bi-info-circle"></i> Часы не видны с ПК, но MAC указан.<br>
+                <small>${result.message || 'Нажмите «Подключить» — в режиме Авто будет использован доступный канал.'}</small>
+            `;
         } else {
             statusDiv.className = 'alert alert-warning';
             statusDiv.innerHTML = `
-                <i class="bi bi-exclamation-triangle"></i> Часы Healbe не найдены.<br>
-                <small>Убедитесь что часы включены и находятся в радиусе Bluetooth</small>
+                <i class="bi bi-exclamation-triangle"></i> ${result.message || 'Часы Healbe не найдены.'}<br>
+                <small>${viaMode === 'pc' ? 'Убедитесь что часы включены и находятся рядом с ПК' : 'Введите MAC вручную и нажмите «Подключить»'}</small>
             `;
         }
+        updateHealbeConnectButton();
     } catch (error) {
         statusDiv.className = 'alert alert-danger';
         statusDiv.innerHTML = `<i class="bi bi-x-circle"></i> Ошибка сканирования: ${error.message}`;
+        updateHealbeConnectButton();
     }
 }
 
 // Подключение к часам Healbe
 async function connectHealbe() {
-    const mac = document.getElementById('healbeMAC').value;
+    const mac = normalizeHealbeMAC(document.getElementById('healbeMAC').value);
     const statusDiv = document.getElementById('healbeStatus');
     const connectBtn = document.getElementById('healbeConnectBtn');
 
-    if (!mac) {
-        alert('Введите MAC адрес часов');
+    if (!isValidHealbeMAC(mac)) {
+        alert('Введите корректный MAC адрес часов (AA:BB:CC:DD:EE:FF)');
         return;
     }
 
+    localStorage.setItem('healbeMAC', mac);
+    localStorage.setItem('healbeViaMode', getHealbeViaMode());
+    document.getElementById('healbeMAC').value = mac;
+
+    const viaMode = getHealbeViaMode();
+
     statusDiv.className = 'alert alert-warning';
-    statusDiv.innerHTML = '<i class="bi bi-hourglass-split"></i> Подключение к ' + mac + '...';
+    statusDiv.innerHTML = '<i class="bi bi-hourglass-split"></i> Подключение к ' + mac + ' (' + healbeViaLabel(viaMode) + ')...';
     connectBtn.disabled = true;
 
     try {
         const response = await fetch(`${API_BASE}/api/healbe/connect`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mac: mac })
+            body: JSON.stringify({ mac: mac, via: viaMode })
         });
 
         const result = await response.json();
@@ -772,8 +1159,8 @@ async function connectHealbe() {
         if (response.ok) {
             statusDiv.className = 'alert alert-success';
             statusDiv.innerHTML = `
-                <i class="bi bi-bluetooth"></i> <strong>Подключено к ${mac}</strong><br>
-                <small>Получение данных о пульсе и стрессе...</small>
+                <i class="bi bi-bluetooth"></i> <strong>${result.message || 'Подключено'}</strong><br>
+                <small>MAC: ${mac}${result.via ? ' · канал: ' + result.via : ''}${result.resolved ? ' · ' + result.resolved : ''}</small>
             `;
             document.getElementById('healbeConnectionStatus').className = 'badge bg-success float-end';
             document.getElementById('healbeConnectionStatus').textContent = 'Подключено';
@@ -790,6 +1177,7 @@ async function connectHealbe() {
 
             // Начинаем polling данных
             startHealbeDataPolling();
+            loadHealbeStatus();
         } else {
             throw new Error(result.message || 'Ошибка подключения');
         }
@@ -816,6 +1204,7 @@ async function disconnectHealbe() {
 
         // Останавливаем polling
         stopHealbeDataPolling();
+        stopHealbeStatusPolling();
 
         // Сбрасываем отображение данных
         document.getElementById('healbeHeartRate').textContent = '--';
@@ -830,13 +1219,80 @@ async function disconnectHealbe() {
 
 // Polling данных Healbe
 let healbePollingInterval = null;
+let healbeStatusInterval = null;
+
+function startHealbeStatusPolling() {
+    if (healbeStatusInterval) {
+        return;
+    }
+    healbeStatusInterval = setInterval(loadHealbeStatus, 5000);
+}
+
+function stopHealbeStatusPolling() {
+    if (healbeStatusInterval) {
+        clearInterval(healbeStatusInterval);
+        healbeStatusInterval = null;
+    }
+}
+
+async function loadHealbeStatus() {
+    const diagnosticsDiv = document.getElementById('healbeDiagnostics');
+    if (!diagnosticsDiv) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE}/api/healbe/status`);
+        const status = await response.json();
+        updateHealbeDiagnostics(status);
+
+        const badge = document.getElementById('healbeConnectionStatus');
+        if (badge) {
+            if (status.connected) {
+                badge.className = 'badge bg-success float-end';
+                badge.textContent = status.transport_ready ? 'Данные идут' : 'Подключено';
+            } else {
+                badge.className = 'badge bg-secondary float-end';
+                badge.textContent = 'Не подключено';
+            }
+        }
+
+        const forwardCheckbox = document.getElementById('healbeForwardMeshtastic');
+        if (forwardCheckbox && typeof status.forward_enabled === 'boolean') {
+            forwardCheckbox.checked = status.forward_enabled;
+        }
+    } catch (error) {
+        diagnosticsDiv.innerHTML = `<div class="text-danger">Ошибка загрузки статуса: ${error.message}</div>`;
+    }
+}
+
+function updateHealbeDiagnostics(status) {
+    const diagnosticsDiv = document.getElementById('healbeDiagnostics');
+    if (!diagnosticsDiv) {
+        return;
+    }
+
+    const staleClass = status.data_stale ? 'text-warning' : 'text-muted';
+    const readyClass = status.transport_ready ? 'text-success' : staleClass;
+
+    diagnosticsDiv.innerHTML = `
+        <div class="mb-1"><strong>Состояние:</strong> <span class="${readyClass}">${status.reason_text || '—'}</span></div>
+        <div class="mb-1"><strong>Канал:</strong> ${status.via || '—'} (режим: ${status.requested_mode || 'auto'})</div>
+        <div class="mb-1"><strong>MAC:</strong> ${status.mac || '—'}</div>
+        <div class="mb-1"><strong>Mesh:</strong> ${status.mesh_sender || '—'}${status.forward_enabled ? ' · пересылка вкл.' : ''}</div>
+        <div class="mb-1"><strong>Bridge URL:</strong> ${status.bridge_url || 'не задан (ingest/ПК)'}</div>
+        <div class="mb-0"><strong>Последние данные:</strong> ${status.last_data_at ? new Date(status.last_data_at).toLocaleString('ru-RU') : 'нет'}</div>
+    `;
+}
 
 function startHealbeDataPolling() {
-    // Загружаем данные сразу
     loadHealbeData();
+    loadHealbeStatus();
 
-    // И затем каждые 5 секунд
-    healbePollingInterval = setInterval(loadHealbeData, 5000);
+    healbePollingInterval = setInterval(() => {
+        loadHealbeData();
+        loadHealbeStatus();
+    }, 5000);
 }
 
 function stopHealbeDataPolling() {

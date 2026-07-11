@@ -1,32 +1,45 @@
 package client
 
 import (
-	"bufio"
+	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
+	"math/rand"
 	"strings"
 	"sync"
 	"time"
 
+	pb "buf.build/gen/go/meshtastic/protobufs/protocolbuffers/go/meshtastic"
 	"go.bug.st/serial"
+	"google.golang.org/protobuf/proto"
 )
 
-// MeshtasticSerialClient клиент для подключения к Meshtastic через COM-порт (USB)
+const (
+	serialStart1         = 0x94
+	serialStart2         = 0xC3
+	serialHeaderLen      = 4
+	serialMaxPacketSize  = 512
+	serialBroadcastNum   = 0xFFFFFFFF
+)
+
+// MeshtasticSerialClient клиент для подключения к Meshtastic через COM-порт (USB).
 type MeshtasticSerialClient struct {
-	port       string
-	baudRate   uint
-	conn       io.ReadWriteCloser
-	mu         sync.RWMutex
-	connected  bool
-	ctx        context.Context
-	cancel     context.CancelFunc
-	messageCh  chan SerialMessage
+	port        string
+	baudRate    uint
+	conn        io.ReadWriteCloser
+	mu          sync.RWMutex
+	connected   bool
+	ctx         context.Context
+	cancel      context.CancelFunc
+	messageCh   chan SerialMessage
+	nodeNum     uint32
+	seenPackets map[uint32]struct{}
 }
 
-// SerialMessage сообщение от/к ESP32 через COM-порт
+// SerialMessage сообщение от/к ESP32 через COM-порт.
 type SerialMessage struct {
 	FromNode string
 	ToNode   string
@@ -34,31 +47,17 @@ type SerialMessage struct {
 	Inbound  bool
 }
 
-// SerialConfig конфигурация COM-порта
-type SerialConfig struct {
-	Port     string
-	BaudRate uint
-}
-
-// DefaultSerialConfig конфигурация по умолчанию для Meshtastic
-func DefaultSerialConfig() SerialConfig {
-	return SerialConfig{
-		Port:     "", // Нужно указать при создании
-		BaudRate: 115200,
-	}
-}
-
-// NewMeshtasticSerialClient создает клиент для подключения через COM-порт
+// NewMeshtasticSerialClient создает клиент для подключения через COM-порт.
 func NewMeshtasticSerialClient(port string) *MeshtasticSerialClient {
 	return &MeshtasticSerialClient{
-		port:      port,
-		baudRate:  115200,
-		connected: false,
-		messageCh: make(chan SerialMessage, 100),
+		port:        port,
+		baudRate:    115200,
+		messageCh:   make(chan SerialMessage, 100),
+		seenPackets: make(map[uint32]struct{}),
 	}
 }
 
-// Connect подключается к COM-порту
+// Connect подключается к COM-порту и инициализирует Meshtastic API.
 func (c *MeshtasticSerialClient) Connect(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -66,12 +65,10 @@ func (c *MeshtasticSerialClient) Connect(ctx context.Context) error {
 	if c.connected {
 		return fmt.Errorf("уже подключен")
 	}
-
 	if c.port == "" {
 		return fmt.Errorf("не указан COM-порт")
 	}
 
-	// Конфигурация последовательного порта
 	mode := &serial.Mode{
 		BaudRate: int(c.baudRate),
 		DataBits: 8,
@@ -84,20 +81,27 @@ func (c *MeshtasticSerialClient) Connect(ctx context.Context) error {
 		return fmt.Errorf("ошибка открытия COM-порта %s: %w", c.port, err)
 	}
 
+	if port, ok := conn.(interface{ SetReadTimeout(time.Duration) error }); ok {
+		_ = port.SetReadTimeout(200 * time.Millisecond)
+	}
+
 	c.conn = conn
 	c.connected = true
-
-	// Создаем контекст для фонового чтения
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 
-	// Запускаем фоновое чтение сообщений
-	go c.readLoop()
+	if err := c.initializeRadio(ctx); err != nil {
+		_ = conn.Close()
+		c.conn = nil
+		c.connected = false
+		return fmt.Errorf("ошибка инициализации Meshtastic: %w", err)
+	}
 
-	log.Printf("Meshtastic Serial: подключен к %s", c.port)
+	go c.readLoop()
+	log.Printf("Meshtastic Serial: подключен к %s (node !%08x)", c.port, c.nodeNum)
 	return nil
 }
 
-// Disconnect отключается от COM-порта
+// Disconnect отключается от COM-порта.
 func (c *MeshtasticSerialClient) Disconnect() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -106,12 +110,9 @@ func (c *MeshtasticSerialClient) Disconnect() error {
 		return nil
 	}
 
-	// Останавливаем фоновое чтение
 	if c.cancel != nil {
 		c.cancel()
 	}
-
-	// Закрываем соединение
 	if c.conn != nil {
 		if err := c.conn.Close(); err != nil {
 			return err
@@ -120,258 +121,343 @@ func (c *MeshtasticSerialClient) Disconnect() error {
 
 	c.connected = false
 	c.conn = nil
-
 	log.Printf("Meshtastic Serial: отключен от %s", c.port)
 	return nil
 }
 
-// readLoop фоновое чтение сообщений из COM-порта
-func (c *MeshtasticSerialClient) readLoop() {
-	if c.conn == nil {
-		return
+func (c *MeshtasticSerialClient) initializeRadio(ctx context.Context) error {
+	wantConfig := &pb.ToRadio{
+		PayloadVariant: &pb.ToRadio_WantConfigId{
+			WantConfigId: uint32(time.Now().Unix()),
+		},
 	}
 
-	reader := bufio.NewReader(c.conn)
+	if err := c.writeToRadio(wantConfig); err != nil {
+		return err
+	}
 
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		packets, err := c.readFromRadio(500 * time.Millisecond)
+		if err != nil {
+			return err
+		}
+
+		for _, packet := range packets {
+			if info := packet.GetMyInfo(); info != nil {
+				c.nodeNum = info.MyNodeNum
+			}
+		}
+
+		if c.nodeNum != 0 {
+			return nil
+		}
+	}
+
+	// Некоторые прошивки не отдают my_info сразу — продолжаем работу.
+	log.Printf("Meshtastic Serial: node number не получен, продолжаем без него")
+	return nil
+}
+
+func (c *MeshtasticSerialClient) readLoop() {
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
 		default:
-			line, err := reader.ReadString('\n')
-			if err != nil {
-				if err != io.EOF && c.ctx.Err() == nil {
-					log.Printf("Meshtastic Serial: ошибка чтения: %v", err)
-				}
+		}
+
+		packets, err := c.readFromRadio(1 * time.Second)
+		if err != nil {
+			if c.ctx.Err() != nil {
 				return
 			}
+			log.Printf("Meshtastic Serial: ошибка чтения: %v", err)
+			continue
+		}
 
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-
-			// Парсим сообщение Meshtastic
-			msg := c.parseMessage(line)
-			if msg != nil {
-				select {
-				case c.messageCh <- *msg:
-				default:
-					log.Printf("Meshtastic Serial: буфер сообщений переполнен")
-				}
-			}
+		for _, fromRadio := range packets {
+			c.handleFromRadio(fromRadio)
 		}
 	}
 }
 
-// parseMessage парсит строку в сообщение
-// Meshtastic отправляет данные в формате:
-// от !12345678: Текст сообщения
-func (c *MeshtasticSerialClient) parseMessage(line string) *SerialMessage {
-	// Простой парсинг формата Meshtastic
-	// Пример: "from !12345678: Hello" или "from !12345678 to !87654321: Hello"
-	
-	if !strings.Contains(line, "from !") {
-		return nil
+func (c *MeshtasticSerialClient) handleFromRadio(fromRadio *pb.FromRadio) {
+	if packet := fromRadio.GetPacket(); packet != nil {
+		c.handleMeshPacket(packet)
 	}
-
-	msg := &SerialMessage{
-		Inbound: true,
-	}
-
-	// Удаляем префикс "from "
-	parts := strings.SplitN(line, "from !", 2)
-	if len(parts) < 2 {
-		return nil
-	}
-
-	rest := parts[1]
-	
-	// Извлекаем FromNode (до пробела или ":")
-	nodeParts := strings.SplitN(rest, ":", 2)
-	if len(nodeParts) < 2 {
-		return nil
-	}
-
-	fromParts := strings.Fields(nodeParts[0])
-	if len(fromParts) == 0 {
-		return nil
-	}
-
-	msg.FromNode = "!" + strings.TrimSpace(fromParts[0])
-
-	// Извлекаем текст сообщения
-	textParts := strings.SplitN(nodeParts[1], "to !", 2)
-	if len(textParts) > 1 {
-		// Есть "to" адресат
-		toAndText := strings.SplitN(textParts[1], ":", 2)
-		if len(toAndText) >= 2 {
-			msg.ToNode = "!" + strings.TrimSpace(toAndText[0])
-			msg.Text = strings.TrimSpace(toAndText[1])
-		}
-	} else {
-		msg.Text = strings.TrimSpace(textParts[0])
-		msg.ToNode = "!broadcast"
-	}
-
-	return msg
 }
 
-// SendMessage отправляет сообщение через COM-порт
+func (c *MeshtasticSerialClient) handleMeshPacket(packet *pb.MeshPacket) {
+	data := packet.GetDecoded()
+	if data == nil {
+		return
+	}
+	if data.GetPortnum() != pb.PortNum_TEXT_MESSAGE_APP {
+		return
+	}
+
+	text := string(data.GetPayload())
+	if text == "" {
+		return
+	}
+
+	c.mu.Lock()
+	if _, seen := c.seenPackets[packet.GetId()]; seen {
+		c.mu.Unlock()
+		return
+	}
+	c.seenPackets[packet.GetId()] = struct{}{}
+	c.mu.Unlock()
+
+	toNode := formatSerialNodeID(packet.GetTo())
+	if packet.GetTo() == serialBroadcastNum {
+		toNode = "broadcast"
+	}
+
+	msg := SerialMessage{
+		FromNode: formatSerialNodeID(packet.GetFrom()),
+		ToNode:   toNode,
+		Text:     text,
+		Inbound:  true,
+	}
+
+	select {
+	case c.messageCh <- msg:
+	default:
+		log.Printf("Meshtastic Serial: буфер сообщений переполнен")
+	}
+}
+
+// SendMessage отправляет текстовое сообщение в mesh через USB.
 func (c *MeshtasticSerialClient) SendMessage(ctx context.Context, toNode, text string) error {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	if !c.connected {
+	if !c.connected || c.conn == nil {
 		return fmt.Errorf("не подключен")
 	}
 
-	if c.conn == nil {
-		return fmt.Errorf("соединение не установлено")
+	toNum := parseSerialNodeID(toNode)
+	packetID := uint32(rand.Intn(2386827) + 1)
+
+	toRadio := &pb.ToRadio{
+		PayloadVariant: &pb.ToRadio_Packet{
+			Packet: &pb.MeshPacket{
+				To:      toNum,
+				From:    c.nodeNum,
+				Id:      packetID,
+				WantAck: true,
+				PayloadVariant: &pb.MeshPacket_Decoded{
+					Decoded: &pb.Data{
+						Portnum: pb.PortNum_TEXT_MESSAGE_APP,
+						Payload: []byte(text),
+					},
+				},
+			},
+		},
 	}
 
-	// Формируем команду для Meshtastic
-	// Meshtastic принимает команды в формате:
-	// sendtext <текст> --to <node_id>
-	command := fmt.Sprintf("sendtext %s --to %s\n", text, toNode)
-
-	_, err := c.conn.Write([]byte(command))
-	if err != nil {
+	if err := c.writeToRadio(toRadio); err != nil {
 		return fmt.Errorf("ошибка отправки сообщения: %w", err)
 	}
 
-	log.Printf("Meshtastic Serial: отправлено сообщение на %s: %s", toNode, text)
+	log.Printf("Meshtastic Serial: отправлено на %s: %s", toNode, text)
 	return nil
 }
 
-// GetMessages возвращает канал для получения сообщений
+func (c *MeshtasticSerialClient) writeToRadio(toRadio *pb.ToRadio) error {
+	payload, err := proto.Marshal(toRadio)
+	if err != nil {
+		return err
+	}
+
+	packet := make([]byte, serialHeaderLen+len(payload))
+	packet[0] = serialStart1
+	packet[1] = serialStart2
+	binary.BigEndian.PutUint16(packet[2:4], uint16(len(payload)))
+	copy(packet[serialHeaderLen:], payload)
+
+	_, err = c.conn.Write(packet)
+	return err
+}
+
+func (c *MeshtasticSerialClient) readFromRadio(timeout time.Duration) ([]*pb.FromRadio, error) {
+	deadline := time.Now().Add(timeout)
+	processed := make([]byte, 0, serialMaxPacketSize)
+	previous := byte(0)
+	repeatCount := 0
+	results := make([]*pb.FromRadio, 0)
+	buf := make([]byte, 1)
+
+	for time.Now().Before(deadline) {
+		n, err := c.conn.Read(buf)
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline") {
+				break
+			}
+			return results, err
+		}
+		if n == 0 {
+			continue
+		}
+
+		b := buf[0]
+		if b == previous {
+			repeatCount++
+		} else {
+			repeatCount = 0
+		}
+		previous = b
+
+		if repeatCount > 20 && len(processed) < serialHeaderLen {
+			break
+		}
+
+		pointer := len(processed)
+		processed = append(processed, b)
+
+		if pointer == 0 && b != serialStart1 {
+			processed = processed[:0]
+			continue
+		}
+		if pointer == 1 && b != serialStart2 {
+			processed = processed[:0]
+			continue
+		}
+		if pointer < serialHeaderLen {
+			continue
+		}
+
+		packetLength := int(processed[2])<<8 | int(processed[3])
+		if packetLength > serialMaxPacketSize {
+			processed = processed[:0]
+			continue
+		}
+
+		if len(processed) < serialHeaderLen+packetLength {
+			continue
+		}
+
+		fromRadio := &pb.FromRadio{}
+		if err := proto.Unmarshal(processed[serialHeaderLen:serialHeaderLen+packetLength], fromRadio); err != nil {
+			processed = processed[:0]
+			continue
+		}
+
+		results = append(results, fromRadio)
+		processed = processed[:0]
+	}
+
+	return results, nil
+}
+
 func (c *MeshtasticSerialClient) GetMessages() <-chan SerialMessage {
 	return c.messageCh
 }
 
-// IsConnected проверяет статус подключения
 func (c *MeshtasticSerialClient) IsConnected() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.connected
 }
 
-// GetPort возвращает имя COM-порта
 func (c *MeshtasticSerialClient) GetPort() string {
 	return c.port
 }
 
-// SetPort устанавливает COM-порт
 func (c *MeshtasticSerialClient) SetPort(port string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.port = port
 }
 
-// ScanForDevices сканирует доступные COM-порты для поиска Meshtastic устройств
+func (c *MeshtasticSerialClient) GetNodeNum() uint32 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.nodeNum
+}
+
+// ScanForDevices сканирует доступные COM-порты.
 func ScanForDevices() ([]string, error) {
 	ports, err := serial.GetPortsList()
 	if err != nil {
 		return nil, err
 	}
-
-	found := make([]string, 0)
-
-	for _, port := range ports {
-		if isMeshtasticPort(port) {
-			found = append(found, port)
-		}
-	}
-
-	// Если не нашли Meshtastic, вернем все доступные порты
-	if len(found) == 0 {
+	if len(ports) == 0 {
 		return ports, nil
 	}
-
-	return found, nil
+	return ports, nil
 }
 
-// isMeshtasticPort проверяет является ли COM-порт устройством Meshtastic
-func isMeshtasticPort(port string) bool {
-	mode := &serial.Mode{
-		BaudRate: 115200,
-		DataBits: 8,
-		StopBits: serial.OneStopBit,
-		Parity:   serial.NoParity,
-	}
-
-	conn, err := serial.Open(port, mode)
-	if err != nil {
-		return false
-	}
-	defer conn.Close()
-
-	// Устанавливаем таймаут
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	// Отправляем тестовую команду
-	_, err = conn.Write([]byte("version\n"))
-	if err != nil {
-		return false
-	}
-
-	// Читаем ответ
-	buffer := make([]byte, 1024)
-	
-	// Устанавливаем дедлайн для чтения
-	readCtx, readCancel := context.WithTimeout(ctx, 1*time.Second)
-	defer readCancel()
-
-	done := make(chan bool, 1)
-	var n int
-	var readErr error
-
-	go func() {
-		n, readErr = conn.Read(buffer)
-		done <- true
-	}()
-
-	select {
-	case <-readCtx.Done():
-		return false
-	case <-done:
-		if readErr != nil {
-			return false
-		}
-		response := string(buffer[:n])
-		// Meshtastic обычно отвечает версией прошивки
-		return strings.Contains(response, "Meshtastic") || 
-		       strings.Contains(response, "firmware") ||
-		       len(response) > 10
-	}
+func formatSerialNodeID(num uint32) string {
+	return fmt.Sprintf("!%08x", num)
 }
 
-// Binary протокол Meshtastic (для продвинутого использования)
-const (
-	MESHTASTIC_MAGIC1 = 0x94
-	MESHTASTIC_MAGIC2 = 0xC3
-)
+func parseSerialNodeID(nodeID string) uint32 {
+	nodeID = strings.TrimSpace(nodeID)
+	if nodeID == "" || nodeID == "broadcast" || nodeID == "^all" {
+		return serialBroadcastNum
+	}
+	if strings.HasPrefix(nodeID, "!") {
+		nodeID = nodeID[1:]
+	}
+	var result uint32
+	fmt.Sscanf(nodeID, "%x", &result)
+	return result
+}
 
-// parseBinaryMessage парсит бинарное сообщение Meshtastic
+// parseBinaryMessage оставлен для совместимости.
 func (c *MeshtasticSerialClient) parseBinaryMessage(data []byte) (*SerialMessage, error) {
-	if len(data) < 4 {
+	if len(data) < serialHeaderLen {
 		return nil, fmt.Errorf("слишком короткие данные")
 	}
-
-	// Проверка magic bytes
-	if data[0] != MESHTASTIC_MAGIC1 || data[1] != MESHTASTIC_MAGIC2 {
+	if data[0] != serialStart1 || data[1] != serialStart2 {
 		return nil, fmt.Errorf("неверные magic bytes")
 	}
 
-	// Читаем длину payload
-	length := binary.LittleEndian.Uint16(data[2:4])
-
-	if len(data) < 4+int(length) {
+	length := binary.BigEndian.Uint16(data[2:4])
+	if len(data) < serialHeaderLen+int(length) {
 		return nil, fmt.Errorf("неполные данные")
 	}
 
-	// Здесь должен быть парсинг protobuf сообщения Meshtastic
-	// Для простоты возвращаем ошибку
-	return nil, fmt.Errorf("бинарный парсинг не реализован")
+	fromRadio := &pb.FromRadio{}
+	if err := proto.Unmarshal(data[serialHeaderLen:], fromRadio); err != nil {
+		return nil, err
+	}
+
+	packet := fromRadio.GetPacket()
+	if packet == nil {
+		return nil, fmt.Errorf("нет mesh packet")
+	}
+
+	dataMsg := packet.GetDecoded()
+	if dataMsg == nil || dataMsg.GetPortnum() != pb.PortNum_TEXT_MESSAGE_APP {
+		return nil, fmt.Errorf("не текстовое сообщение")
+	}
+
+	return &SerialMessage{
+		FromNode: formatSerialNodeID(packet.GetFrom()),
+		ToNode:   formatSerialNodeID(packet.GetTo()),
+		Text:     string(dataMsg.GetPayload()),
+		Inbound:  true,
+	}, nil
+}
+
+// parseMessage — legacy text parser, не используется официальной прошивкой.
+func (c *MeshtasticSerialClient) parseMessage(line string) *SerialMessage {
+	if !strings.Contains(line, "from !") {
+		return nil
+	}
+	_ = bytes.Buffer{}
+	return nil
 }

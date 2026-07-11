@@ -3,14 +3,13 @@ module mesh-server
 go 1.25.0
 
 require (
-	buf.build/gen/go/meshtastic/protobufs/protocolbuffers/go v1.36.11-20260331120000-abcdef123456.1
 	github.com/gorilla/websocket v1.5.3
 	go.bug.st/serial v1.6.2
-	google.golang.org/protobuf v1.36.11
 	modernc.org/sqlite v1.46.1
 )
 
 require (
+	buf.build/gen/go/meshtastic/protobufs/protocolbuffers/go v1.36.11-20260624222922-066cfafd2aeb.1 // indirect
 	github.com/creack/goselect v0.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-ble/ble v0.0.0-20240122180141-8c5522f54333 // indirect
@@ -18,6 +17,7 @@ require (
 	github.com/pkg/errors v0.8.1 // indirect
 	golang.org/x/net v0.44.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
+	google.golang.org/protobuf v1.36.11 // indirect
 )
 
 require (

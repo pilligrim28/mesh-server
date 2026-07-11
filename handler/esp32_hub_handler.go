@@ -3,17 +3,20 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
-
-	"mesh-server/service"
 )
+
+// ESP32HubStatusProvider возвращает статус ESP32-хаба.
+type ESP32HubStatusProvider interface {
+	GetStatus() map[string]interface{}
+}
 
 // ESP32HubHandler HTTP API для ESP32-хаба.
 type ESP32HubHandler struct {
-	hubService *service.ESP32HubService
+	hubService ESP32HubStatusProvider
 }
 
 // NewESP32HubHandler создаёт handler ESP32-хаба.
-func NewESP32HubHandler(hubService *service.ESP32HubService) *ESP32HubHandler {
+func NewESP32HubHandler(hubService ESP32HubStatusProvider) *ESP32HubHandler {
 	return &ESP32HubHandler{hubService: hubService}
 }
 

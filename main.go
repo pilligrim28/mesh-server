@@ -20,6 +20,10 @@ import (
 func main() {
 	// Загрузка конфигурации
 	cfg := config.Load()
+	if cfg.DemoMode {
+		log.Println("=== DEMO MODE: презентация для заказчика ===")
+		log.Printf("ESP32 USB: %s | Healbe: симулятор | BLE-скан: выкл", cfg.ESP32COMPort)
+	}
 	log.Printf("Starting mesh-server on port %s", cfg.ServerPort)
 
 	// Инициализация базы данных
@@ -43,11 +47,13 @@ func main() {
 	// Инициализация ESP32 Bluetooth клиента
 	esp32BtClient := client.NewESP32BluetoothClient("")
 
-	// Инициализация сервисов
-	services := service.NewServices(deviceRepo, metricsRepo, alertRepo, messageRepo, discoveryRepo, cfg.ESP32URL)
+	// Инициализация сервисов и HTTP-обработчиков
+	services := service.NewServices(discoveryRepo, deviceRepo)
+	handlers := handler.NewHandlers(deviceRepo, metricsRepo, alertRepo, messageRepo, services.DiscoveryService, cfg.ESP32URL)
+	defer handlers.Close()
 
 	// Инициализация ESP32 handler
-	esp32Handler := handler.NewESP32Handler(bleScanner, esp32BtClient, messageRepo, services.WSHandler)
+	esp32Handler := handler.NewESP32Handler(bleScanner, esp32BtClient, messageRepo, handlers.WS)
 
 	// Инициализация MQTT сервиса (Meshtastic integration)
 	mqttConfig := service.MQTTConfig{
@@ -62,7 +68,7 @@ func main() {
 		MapReportInterval:   3600,
 	}
 
-	mqttService := service.NewMeshtasticService(deviceRepo, messageRepo, services.WSHandler, mqttConfig)
+	mqttService := service.NewMeshtasticService(deviceRepo, messageRepo, handlers.WS, mqttConfig)
 	services.MQTTService = mqttService
 
 	if err := mqttService.Start(context.Background()); err != nil {
@@ -73,8 +79,8 @@ func main() {
 	// Инициализация MQTT handler
 	mqttHandler := handler.NewMQTTHandler(mqttService)
 
-	// Инициализация Serial сервиса (USB подключение к Meshtastic)
-	serialService := service.NewSerialService(messageRepo, deviceRepo)
+	// Инициализация Serial сервиса (USB hub для Meshtastic)
+	serialService := service.NewSerialService(messageRepo, deviceRepo, handlers.WS)
 	if cfg.ESP32COMPort != "" {
 		if err := serialService.Start(cfg.ESP32COMPort); err != nil {
 			log.Printf("Warning: Failed to start serial service: %v", err)
@@ -111,11 +117,31 @@ func main() {
 
 	// Инициализация симулятора носимого устройства
 	sim := simulator.NewSimulator(deviceRepo, metricsRepo, alertRepo)
-	sim.Start(5 * time.Second) // Генерация данных каждые 5 секунд
+	if !cfg.PeopleSimEnabled && !cfg.DemoMode {
+		sim.Start(5 * time.Second)
+	}
 	defer sim.Stop()
 
-	// Обработчик симулятора
+	peopleSim := simulator.NewPeopleMovementSimulator(
+		deviceRepo, metricsRepo, alertRepo,
+		simulator.PeopleMovementConfig{
+			CenterLat:   cfg.PeopleSimCenterLat,
+			CenterLon:   cfg.PeopleSimCenterLon,
+			RadiusKm:    cfg.PeopleSimRadiusKm,
+			PersonCount: cfg.PeopleSimCount,
+			Interval:    time.Duration(cfg.PeopleSimInterval) * time.Second,
+		},
+	)
+	if cfg.PeopleSimEnabled || cfg.DemoMode {
+		if err := peopleSim.Start(); err != nil {
+			log.Printf("Warning: People movement sim failed: %v", err)
+		}
+		defer peopleSim.Stop()
+	}
+
+	// Обработчики симуляторов
 	simHandler := handler.NewSimulatorHandler(sim)
+	peopleSimHandler := handler.NewPeopleSimHandler(peopleSim)
 
 	// Инициализация ESP32 Hub (мост между mesh-сетями и сервером)
 	hubURL := cfg.ESP32URL
@@ -129,7 +155,7 @@ func main() {
 	esp32HubService := service.NewESP32HubService(
 		deviceRepo,
 		messageRepo,
-		services.WSHandler,
+		handlers.WS,
 		service.ESP32HubConfig{
 			Enabled:      cfg.ESP32HubEnabled && hubURL != "",
 			DeviceURL:    hubURL,
@@ -142,20 +168,69 @@ func main() {
 	defer esp32HubService.Stop()
 
 	if cfg.ESP32HubEnabled && hubURL != "" {
-		services.MessageHandler.SetMeshSender(esp32HubService)
+		handlers.Message.SetMeshSender(esp32HubService)
+	} else if cfg.ESP32COMPort != "" && serialService.IsConnected() {
+		handlers.Message.SetMeshSender(serialService)
+		log.Printf("USB Meshtastic hub active on %s", cfg.ESP32COMPort)
 	}
 
 	esp32HubHandler := handler.NewESP32HubHandler(esp32HubService)
 
+	healbeBridgeURL := cfg.HealbeBridgeURL
+	if healbeBridgeURL == "" {
+		healbeBridgeURL = cfg.ESP32URL
+	}
+	if healbeBridgeURL != "" && !strings.HasPrefix(healbeBridgeURL, "http") {
+		healbeBridgeURL = "http://" + healbeBridgeURL
+	}
+
+	meshSenderDesc := "не настроен"
+	if cfg.ESP32COMPort != "" && serialService.IsConnected() {
+		meshSenderDesc = "serial:" + cfg.ESP32COMPort
+	} else if cfg.ESP32HubEnabled && hubURL != "" {
+		meshSenderDesc = "wifi:" + hubURL
+	} else if cfg.ESP32URL != "" {
+		meshSenderDesc = "wifi:" + cfg.ESP32URL
+	}
+
 	// Инициализация Healbe handler (часы GoBe)
-	healbeHandler := handler.NewHealbeHandler(healbeRepo, metricsRepo, deviceRepo, services.WSHandler, bleScanner)
-	// Устанавливаем ESP32 клиент для пересылки в Meshtastic
-	if cfg.ESP32HubEnabled && hubURL != "" {
+	healbeHandler := handler.NewHealbeHandler(healbeRepo, metricsRepo, deviceRepo, handlers.WS, bleScanner)
+	healbeHandler.InitESP32Bridge(healbeBridgeURL)
+	healbeHandler.SetRuntimeInfo(handler.HealbeRuntimeInfo{
+		BridgeURL:      healbeBridgeURL,
+		MeshSenderDesc: meshSenderDesc,
+	})
+
+	if cfg.ESP32COMPort != "" && serialService.IsConnected() {
+		healbeHandler.SetMeshSender(serialService)
+	} else if cfg.ESP32HubEnabled && hubURL != "" {
 		healbeHandler.SetMeshtasticClient(client.NewESP32Client(hubURL))
 	} else if cfg.ESP32URL != "" {
-		esp32Client := client.NewESP32Client(cfg.ESP32URL)
-		healbeHandler.SetMeshtasticClient(esp32Client)
+		healbeHandler.SetMeshtasticClient(client.NewESP32Client(cfg.ESP32URL))
 	}
+
+	if cfg.HealbeMAC != "" && !cfg.DemoMode {
+		healbeHandler.SetForwardEnabled(cfg.HealbeForwardMesh)
+		go func() {
+			time.Sleep(2 * time.Second)
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := healbeHandler.AutoConnect(ctx, cfg.HealbeMAC, cfg.HealbeMode, cfg.HealbeForwardMesh); err != nil {
+				log.Printf("Healbe auto-connect failed: %v", err)
+			}
+		}()
+	}
+
+	var healbeDemo *simulator.HealbeDemo
+	if cfg.DemoMode {
+		healbeHandler.EnableDemo(cfg.HealbeMAC, cfg.HealbeForwardMesh)
+		healbeDemo = simulator.NewHealbeDemo(healbeRepo, deviceRepo, cfg.HealbeMAC, healbeHandler.PublishDemoData)
+		healbeDemo.Start(5 * time.Second)
+		defer healbeDemo.Stop()
+		log.Printf("Healbe demo active for MAC %s", cfg.HealbeMAC)
+	}
+
+	systemHandler := handler.NewSystemHandler(cfg.DemoMode, cfg.ServerPort, serialService)
 
 	// Настройка роутинга
 	mux := http.NewServeMux()
@@ -164,9 +239,9 @@ func main() {
 	mux.HandleFunc("/api/devices", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			services.DeviceHandler.GetAll(w, r)
+			handlers.Device.GetAll(w, r)
 		case http.MethodPost:
-			services.DeviceHandler.Create(w, r)
+			handlers.Device.Create(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -176,9 +251,9 @@ func main() {
 	mux.HandleFunc("/api/metrics", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			services.MetricsHandler.GetLatest(w, r)
+			handlers.Metrics.GetLatest(w, r)
 		case http.MethodPost:
-			services.MetricsHandler.Create(w, r)
+			handlers.Metrics.Create(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -186,7 +261,7 @@ func main() {
 
 	mux.HandleFunc("/api/metrics/device", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			services.MetricsHandler.GetByDeviceID(w, r)
+			handlers.Metrics.GetByDeviceID(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -196,9 +271,9 @@ func main() {
 	mux.HandleFunc("/api/alerts", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			services.AlertHandler.GetUnread(w, r)
+			handlers.Alert.GetUnread(w, r)
 		case http.MethodPost:
-			services.AlertHandler.Create(w, r)
+			handlers.Alert.Create(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -207,7 +282,7 @@ func main() {
 	mux.HandleFunc("/api/alerts/device", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			services.AlertHandler.GetByDeviceID(w, r)
+			handlers.Alert.GetByDeviceID(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -215,7 +290,7 @@ func main() {
 
 	mux.HandleFunc("/api/alerts/read", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
-			services.AlertHandler.MarkAsRead(w, r)
+			handlers.Alert.MarkAsRead(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -223,7 +298,7 @@ func main() {
 
 	mux.HandleFunc("/api/alerts/read-all", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut {
-			services.AlertHandler.MarkAllAsRead(w, r)
+			handlers.Alert.MarkAllAsRead(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -233,9 +308,9 @@ func main() {
 	mux.HandleFunc("/api/messages", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			services.MessageHandler.GetOutbound(w, r)
+			handlers.Message.GetOutbound(w, r)
 		case http.MethodPost:
-			services.MessageHandler.Create(w, r)
+			handlers.Message.Create(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -243,7 +318,7 @@ func main() {
 
 	mux.HandleFunc("/api/messages/device", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			services.MessageHandler.GetByDeviceID(w, r)
+			handlers.Message.GetByDeviceID(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -252,7 +327,7 @@ func main() {
 	// Map API
 	mux.HandleFunc("/api/map", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			services.MapHandler.GetDevicesForMap(w, r)
+			handlers.Map.GetDevicesForMap(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -260,14 +335,14 @@ func main() {
 
 	// WebSocket endpoint
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		services.WSHandler.ServeHTTP(w, r)
+		handlers.WS.ServeHTTP(w, r)
 	})
 
 	// Discovery API
 	mux.HandleFunc("/api/discovery", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			services.DiscoveryHandler.GetAllDevices(w, r)
+			handlers.Discovery.GetAllDevices(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -276,7 +351,7 @@ func main() {
 	mux.HandleFunc("/api/discovery/bluetooth", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			services.DiscoveryHandler.GetBluetoothDevices(w, r)
+			handlers.Discovery.GetBluetoothDevices(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -285,7 +360,7 @@ func main() {
 	mux.HandleFunc("/api/discovery/wifi", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
-			services.DiscoveryHandler.GetWiFiDevices(w, r)
+			handlers.Discovery.GetWiFiDevices(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -293,7 +368,7 @@ func main() {
 
 	mux.HandleFunc("/api/discovery/meshtastic", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			services.DiscoveryHandler.GetMeshtasticDevices(w, r)
+			handlers.Discovery.GetMeshtasticDevices(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -301,7 +376,7 @@ func main() {
 
 	mux.HandleFunc("/api/discovery/status", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			services.DiscoveryHandler.GetStatus(w, r)
+			handlers.Discovery.GetStatus(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -309,7 +384,7 @@ func main() {
 
 	mux.HandleFunc("/api/discovery/scan", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			services.DiscoveryHandler.StartScan(w, r)
+			handlers.Discovery.StartScan(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -317,7 +392,7 @@ func main() {
 
 	mux.HandleFunc("/api/discovery/bluetooth/start", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			services.DiscoveryHandler.StartBluetoothScan(w, r)
+			handlers.Discovery.StartBluetoothScan(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -325,7 +400,7 @@ func main() {
 
 	mux.HandleFunc("/api/discovery/bluetooth/stop", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			services.DiscoveryHandler.StopBluetoothScan(w, r)
+			handlers.Discovery.StopBluetoothScan(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -464,7 +539,7 @@ func main() {
 
 	mux.HandleFunc("/api/discovery/wifi/start", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			services.DiscoveryHandler.StartWiFiScan(w, r)
+			handlers.Discovery.StartWiFiScan(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -472,7 +547,7 @@ func main() {
 
 	mux.HandleFunc("/api/discovery/wifi/stop", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			services.DiscoveryHandler.StopWiFiScan(w, r)
+			handlers.Discovery.StopWiFiScan(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -480,7 +555,7 @@ func main() {
 
 	mux.HandleFunc("/api/discovery/clear", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
-			services.DiscoveryHandler.ClearDevices(w, r)
+			handlers.Discovery.ClearDevices(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -488,7 +563,7 @@ func main() {
 
 	mux.HandleFunc("/api/discovery/network", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet {
-			services.DiscoveryHandler.GetNetworkInfo(w, r)
+			handlers.Discovery.GetNetworkInfo(w, r)
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -505,6 +580,14 @@ func main() {
 	mux.HandleFunc("/api/simulator/start", simHandler.Start)
 	mux.HandleFunc("/api/simulator/stop", simHandler.Stop)
 	mux.HandleFunc("/api/simulator/event", simHandler.Event)
+
+	mux.HandleFunc("/api/people-sim/status", peopleSimHandler.Status)
+	mux.HandleFunc("/api/people-sim/zone", peopleSimHandler.Zone)
+	mux.HandleFunc("/api/people-sim/start", peopleSimHandler.Start)
+	mux.HandleFunc("/api/people-sim/stop", peopleSimHandler.Stop)
+
+	// System API (демо-режим)
+	mux.HandleFunc("/api/system/status", systemHandler.Status)
 
 	// Healbe API (часы GoBe)
 	mux.HandleFunc("/api/healbe/scan", func(w http.ResponseWriter, r *http.Request) {
@@ -549,10 +632,23 @@ func main() {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
+	mux.HandleFunc("/api/healbe/ingest", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			healbeHandler.IngestHealbeData(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/healbe/esp32/config", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			healbeHandler.GetESP32HealbeConfig(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
 
-	// Static files (frontend)
-	fs := http.FileServer(http.Dir("static"))
-	mux.Handle("/static/", http.StripPrefix("/static/", fs))
+	// Static files (frontend) — без кэша для JS/CSS при разработке
+	mux.Handle("/static/", noCacheStatic(http.StripPrefix("/static/", http.FileServer(http.Dir("static")))))
 
 	// Index page
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -570,6 +666,15 @@ func main() {
 	if err := http.ListenAndServe(":"+cfg.ServerPort, loggedMux); err != nil {
 		log.Fatalf("Server failed to start: %v", err)
 	}
+}
+
+func noCacheStatic(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, ".js") || strings.HasSuffix(r.URL.Path, ".css") {
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func withLogging(next http.Handler) http.Handler {

@@ -10,12 +10,24 @@
     <style>
         :root {
             --sidebar-width: 350px;
+            --bg-main: #1a1a2e;
+            --bg-sidebar: #16213e;
+            --bg-card: #1f2a44;
+            --bg-card-header: #0f3460;
+            --border-color: #2d4a7a;
+            --text-primary: #f5f7fb;
+            --text-secondary: #c5d0e6;
+            --text-muted: #9db0d0;
+            --accent: #4ecca3;
+            --accent-soft: rgba(78, 204, 163, 0.15);
         }
 
         body {
             overflow: hidden;
-            background: #1a1a2e;
-            color: #eee;
+            background: var(--bg-main);
+            color: var(--text-primary);
+            font-size: 15px;
+            line-height: 1.5;
         }
 
         #app {
@@ -30,17 +42,23 @@
 
         #sidebar {
             width: var(--sidebar-width);
-            background: #16213e;
-            border-left: 1px solid #0f3460;
+            background: var(--bg-sidebar);
+            border-left: 1px solid var(--border-color);
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            color: var(--text-primary);
         }
 
         .sidebar-header {
             padding: 1rem;
-            background: #0f3460;
-            border-bottom: 1px solid #1a1a2e;
+            background: var(--bg-card-header);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .sidebar-header h5,
+        .sidebar-header small {
+            color: var(--text-primary);
         }
 
         .sidebar-content {
@@ -50,18 +68,19 @@
         }
 
         .nav-tabs {
-            border-bottom: 1px solid #0f3460;
+            border-bottom: 1px solid var(--border-color);
         }
 
         .nav-tabs .nav-link {
-            color: #aaa;
+            color: var(--text-secondary);
             border: none;
             background: transparent;
+            font-weight: 500;
         }
 
         .nav-tabs .nav-link.active {
             color: #fff;
-            background: #0f3460;
+            background: var(--bg-card-header);
             border: none;
         }
 
@@ -70,64 +89,104 @@
         }
 
         .card {
-            background: #1a1a2e;
-            border: 1px solid #0f3460;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
             margin-bottom: 1rem;
+            color: var(--text-primary);
         }
 
         .card-header {
-            background: #0f3460;
-            border-bottom: 1px solid #1a1a2e;
+            background: var(--bg-card-header);
+            border-bottom: 1px solid var(--border-color);
             font-weight: 600;
+            color: #fff;
+        }
+
+        .card-body {
+            color: var(--text-primary);
+        }
+
+        .card.bg-light {
+            background: #243352 !important;
+            border-color: var(--border-color);
+        }
+
+        .card.bg-light .card-body,
+        .card.bg-light h6 {
+            color: var(--text-primary);
         }
 
         .metric-value {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: #4ecca3;
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--accent);
         }
 
         .metric-label {
-            font-size: 0.85rem;
-            color: #aaa;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            font-weight: 500;
         }
 
         .alert-item {
-            padding: 0.75rem;
+            padding: 0.85rem;
             border-radius: 0.5rem;
             margin-bottom: 0.5rem;
+            color: var(--text-primary);
+        }
+
+        .alert-item p,
+        .alert-item strong {
+            color: var(--text-primary);
         }
 
         .alert-critical {
-            background: rgba(220, 53, 69, 0.2);
-            border-left: 3px solid #dc3545;
+            background: rgba(220, 53, 69, 0.25);
+            border-left: 4px solid #ff6b7a;
         }
 
         .alert-warning {
-            background: rgba(255, 193, 7, 0.2);
-            border-left: 3px solid #ffc107;
+            background: rgba(255, 193, 7, 0.22);
+            border-left: 4px solid #ffd166;
         }
 
         .alert-info {
-            background: rgba(13, 202, 240, 0.2);
-            border-left: 3px solid #0dcaf0;
+            background: rgba(13, 202, 240, 0.18);
+            border-left: 4px solid #5ee7ff;
         }
 
         .message-item {
-            padding: 0.75rem;
-            border-bottom: 1px solid #0f3460;
+            padding: 0.9rem;
+            border: 1px solid var(--border-color);
+            border-radius: 0.5rem;
+            margin-bottom: 0.75rem;
+            color: var(--text-primary);
+        }
+
+        .message-item p {
+            color: #fff;
+            font-size: 1rem;
+            line-height: 1.45;
+            word-break: break-word;
         }
 
         .message-outbound {
-            background: rgba(78, 204, 163, 0.1);
+            background: rgba(78, 204, 163, 0.14);
+            border-left: 4px solid var(--accent);
         }
 
         .message-inbound {
-            background: rgba(13, 202, 240, 0.1);
+            background: rgba(13, 202, 240, 0.12);
+            border-left: 4px solid #5ee7ff;
+        }
+
+        .message-meta {
+            color: var(--text-secondary);
+            font-size: 0.85rem;
         }
 
         .device-marker {
-            background: #4ecca3;
+            background: var(--accent);
             border: 2px solid #fff;
             border-radius: 50%;
             width: 20px;
@@ -135,17 +194,20 @@
         }
 
         .status-online {
-            color: #4ecca3;
+            color: var(--accent);
+            font-weight: 600;
         }
 
         .status-offline {
-            color: #dc3545;
+            color: #ff7b8a;
+            font-weight: 600;
         }
 
         .stat-card {
             text-align: center;
             padding: 1rem;
-            background: #0f3460;
+            background: var(--bg-card-header);
+            border: 1px solid var(--border-color);
             border-radius: 0.5rem;
             margin-bottom: 1rem;
         }
@@ -153,12 +215,13 @@
         .stat-value {
             font-size: 2rem;
             font-weight: bold;
-            color: #4ecca3;
+            color: var(--accent);
         }
 
         .stat-label {
-            font-size: 0.85rem;
-            color: #aaa;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            font-weight: 500;
         }
 
         .tab-pane {
@@ -167,6 +230,11 @@
 
         .tab-pane.active {
             display: block;
+        }
+
+        .tab-pane h6 {
+            color: var(--text-primary);
+            font-weight: 600;
         }
 
         .ws-status {
@@ -178,7 +246,7 @@
         }
 
         .ws-connected {
-            background: #4ecca3;
+            background: var(--accent);
         }
 
         .ws-disconnected {
@@ -188,6 +256,181 @@
         .scroll-container {
             max-height: 400px;
             overflow-y: auto;
+        }
+
+        /* Bootstrap overrides for dark theme */
+        .text-muted {
+            color: var(--text-muted) !important;
+        }
+
+        .form-label {
+            color: var(--text-primary);
+            font-weight: 600;
+            margin-bottom: 0.35rem;
+        }
+
+        .form-control,
+        .form-select,
+        textarea.form-control {
+            background: #10182b;
+            border: 1px solid var(--border-color);
+            color: #fff;
+        }
+
+        .form-control::placeholder,
+        textarea.form-control::placeholder {
+            color: #8fa3c4;
+            opacity: 1;
+        }
+
+        .form-control:focus,
+        textarea.form-control:focus {
+            background: #10182b;
+            border-color: var(--accent);
+            color: #fff;
+            box-shadow: 0 0 0 0.2rem rgba(78, 204, 163, 0.2);
+        }
+
+        .form-check-label {
+            color: var(--text-primary);
+        }
+
+        .alert {
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        .alert-info {
+            background: rgba(13, 202, 240, 0.15);
+            border-color: #2f7f96;
+            color: #dff8ff;
+        }
+
+        .alert-success {
+            background: rgba(78, 204, 163, 0.15);
+            border-color: #2f8f72;
+            color: #e8fff6;
+        }
+
+        .alert-warning {
+            background: rgba(255, 193, 7, 0.15);
+            border-color: #9a7b1f;
+            color: #fff4cc;
+        }
+
+        .alert-danger {
+            background: rgba(220, 53, 69, 0.15);
+            border-color: #9a3340;
+            color: #ffe3e7;
+        }
+
+        .btn-outline-primary,
+        .btn-outline-danger,
+        .btn-outline-warning,
+        .btn-outline-info {
+            color: var(--text-primary);
+            border-color: var(--border-color);
+        }
+
+        .btn-outline-primary:hover,
+        .btn-outline-danger:hover,
+        .btn-outline-warning:hover,
+        .btn-outline-info:hover {
+            color: #fff;
+        }
+
+        .border-secondary {
+            border-color: var(--border-color) !important;
+        }
+
+        #deviceList strong {
+            color: #fff;
+        }
+
+        #deviceList small,
+        #clientsList small {
+            color: var(--text-secondary) !important;
+        }
+
+        .clients-scroll {
+            max-height: calc(100vh - 220px);
+        }
+
+        .device-list-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.85rem 0.9rem;
+            margin-bottom: 0.5rem;
+            border: 1px solid var(--border-color);
+            border-radius: 0.6rem;
+            background: rgba(15, 52, 96, 0.35);
+            cursor: pointer;
+            transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease;
+        }
+
+        .device-list-item:hover {
+            background: rgba(78, 204, 163, 0.12);
+            border-color: var(--accent);
+            transform: translateX(2px);
+        }
+
+        .device-list-item.active {
+            background: rgba(78, 204, 163, 0.2);
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px rgba(78, 204, 163, 0.35);
+        }
+
+        .device-list-item.no-location {
+            opacity: 0.75;
+            cursor: not-allowed;
+        }
+
+        .device-list-item.no-location:hover {
+            transform: none;
+            border-color: var(--border-color);
+            background: rgba(15, 52, 96, 0.35);
+        }
+
+        .device-list-name {
+            color: #fff;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .device-list-meta {
+            color: var(--text-secondary);
+            font-size: 0.82rem;
+            margin-top: 0.15rem;
+        }
+
+        .device-list-coords {
+            color: var(--accent);
+            font-size: 0.8rem;
+            margin-top: 0.2rem;
+        }
+
+        .device-list-status {
+            text-align: right;
+            min-width: 72px;
+        }
+
+        .device-list-status .status-label {
+            display: block;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.15rem;
+        }
+
+        .leaflet-popup-content,
+        .leaflet-popup-content-wrapper {
+            color: #1a1a2e;
+        }
+
+        .leaflet-popup-content h6 {
+            color: #0f3460;
+            font-weight: 700;
         }
     </style>
 </head>
@@ -201,15 +444,23 @@
                     <span id="wsStatus" class="ws-status ws-disconnected"></span>
                 </h5>
                 <small class="text-muted" id="lastUpdate">Обновление...</small>
-                <div class="mt-2">
+                <div class="mt-2 d-flex flex-wrap gap-1">
                     <span class="badge bg-success" id="simStatus">🟢 Симулятор активен</span>
+                    <span class="badge bg-warning text-dark d-none" id="demoBadge">ДЕМО</span>
+                    <span class="badge bg-info text-dark d-none" id="esp32Badge">ESP32</span>
                 </div>
+                <div id="demoBanner" class="alert alert-warning py-1 px-2 mt-2 mb-0 small d-none"></div>
             </div>
 
             <ul class="nav nav-tabs" id="sidebarTabs">
                 <li class="nav-item">
                     <a class="nav-link active" data-tab="overview">
                         <i class="bi bi-speedometer2"></i> Обзор
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" data-tab="clients">
+                        <i class="bi bi-people"></i> Клиенты
                     </a>
                 </li>
                 <li class="nav-item">
@@ -255,9 +506,43 @@
 
                     <div class="card">
                         <div class="card-header">
-                            <i class="bi bi-geo-alt"></i> Устройства на карте
+                            <i class="bi bi-geo-alt"></i> Клиенты на карте
                         </div>
-                        <div class="card-body scroll-container" id="deviceList"></div>
+                        <div class="card-body">
+                            <p class="small message-meta mb-2">Нажмите на клиента, чтобы приблизить его на карте</p>
+                            <div class="scroll-container" id="deviceList"></div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <i class="bi bi-bounding-box"></i> Граница зоны (геозона)
+                        </div>
+                        <div class="card-body">
+                            <p class="small message-meta mb-2">
+                                Задайте центр и радиус. Симуляторы двигаются хаотично; при выходе за границу алерт появится через 5 минут.
+                            </p>
+                            <div class="mb-2">
+                                <label class="form-label small mb-1">Широта / Долгота</label>
+                                <div class="input-group input-group-sm mb-2">
+                                    <input type="number" step="0.0001" class="form-control" id="zoneLat" placeholder="59.9343">
+                                    <input type="number" step="0.0001" class="form-control" id="zoneLon" placeholder="30.3351">
+                                </div>
+                            </div>
+                            <div class="mb-2">
+                                <label class="form-label small mb-1">Радиус (км)</label>
+                                <input type="number" step="0.1" min="0.1" max="50" class="form-control form-control-sm" id="zoneRadius" value="2">
+                            </div>
+                            <div class="d-grid gap-2">
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="pickZoneCenterBtn">
+                                    <i class="bi bi-crosshair"></i> Указать центр на карте
+                                </button>
+                                <button type="button" class="btn btn-sm btn-primary" id="applyZoneBtn">
+                                    <i class="bi bi-check-lg"></i> Применить границу
+                                </button>
+                            </div>
+                            <div id="zoneStatus" class="small text-muted mt-2"></div>
+                        </div>
                     </div>
 
                     <div class="card">
@@ -279,6 +564,18 @@
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- Клиенты -->
+                <div class="tab-pane" id="clients-tab">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="mb-0">Клиенты в сети</h6>
+                        <button class="btn btn-sm btn-outline-primary" type="button" id="fitAllDevicesBtn">
+                            <i class="bi bi-arrows-fullscreen"></i> Показать всех
+                        </button>
+                    </div>
+                    <p class="message-meta mb-3">Выберите клиента — карта приблизится к его местоположению</p>
+                    <div id="clientsList" class="scroll-container clients-scroll"></div>
                 </div>
 
                 <!-- Метрики -->
@@ -373,20 +670,31 @@
                                 <button class="btn btn-sm btn-light me-2" onclick="scanHealbe()">
                                     <i class="bi bi-search"></i> Сканировать
                                 </button>
-                                <button class="btn btn-sm btn-success" onclick="connectHealbe()" id="healbeConnectBtn" disabled>
+                                <button class="btn btn-sm btn-success" onclick="connectHealbe()" id="healbeConnectBtn">
                                     <i class="bi bi-bluetooth"></i> Подключить
                                 </button>
                             </div>
                         </div>
                         <div class="card-body">
                             <div id="healbeStatus" class="alert alert-info mb-3">
-                                <i class="bi bi-info-circle"></i> Нажмите "Сканировать" для поиска часов Healbe по Bluetooth
+                                <i class="bi bi-info-circle"></i> В демо-режиме данные Healbe генерируются автоматически. ESP32 на USB передаёт Meshtastic.
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Канал данных:</label>
+                                <select class="form-select" id="healbeViaMode">
+                                    <option value="auto">Авто (рекомендуется)</option>
+                                    <option value="demo" selected>Демо (для презентации)</option>
+                                    <option value="pc">Bluetooth ПК</option>
+                                    <option value="esp32">ESP32 bridge</option>
+                                </select>
+                                <small class="message-meta">Авто выбирает ESP32 bridge по HTTP, иначе Bluetooth ПК</small>
                             </div>
 
                             <div class="mb-3">
                                 <label class="form-label">MAC адрес часов:</label>
-                                <input type="text" class="form-control" id="healbeMAC" placeholder="AA:BB:CC:DD:EE:FF">
-                                <small class="text-muted">MAC адрес часов Healbe GoBe</small>
+                                <input type="text" class="form-control" id="healbeMAC" placeholder="8B:20:91:8E:F5:CB" value="8B:20:91:8E:F5:CB">
+                                <small class="message-meta">MAC адрес Healbe GoBe</small>
                             </div>
 
                             <div class="form-check form-switch mb-3">
@@ -431,6 +739,15 @@
 
                     <div class="card">
                         <div class="card-header">
+                            <i class="bi bi-clipboard2-pulse"></i> Диагностика
+                        </div>
+                        <div class="card-body small" id="healbeDiagnostics">
+                            <div class="text-muted">Загрузка статуса...</div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
                             <i class="bi bi-info-circle"></i> О часах Healbe
                         </div>
                         <div class="card-body">
@@ -453,6 +770,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20260627c"></script>
 </body>
 </html>

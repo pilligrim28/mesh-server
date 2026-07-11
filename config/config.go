@@ -22,6 +22,17 @@ type Config struct {
 	MQTTMapReporting     bool
 	ESP32HubEnabled      bool
 	ESP32HubPollInterval int
+	HealbeMAC            string
+	HealbeMode           string
+	HealbeForwardMesh    bool
+	HealbeBridgeURL      string
+	DemoMode             bool
+	PeopleSimEnabled     bool
+	PeopleSimCount       int
+	PeopleSimRadiusKm    float64
+	PeopleSimCenterLat   float64
+	PeopleSimCenterLon   float64
+	PeopleSimInterval    int
 }
 
 func Load() *Config {
@@ -42,8 +53,47 @@ func Load() *Config {
 		MQTTMapReporting:   getEnvBool("MQTT_MAP_REPORTING", false),
 		ESP32HubEnabled:    getEnvBool("ESP32_HUB_ENABLED", true),
 		ESP32HubPollInterval: getEnvInt("ESP32_HUB_POLL_INTERVAL", 5),
+		HealbeMAC:          getEnv("HEALBE_MAC", ""),
+		HealbeMode:         getEnv("HEALBE_MODE", "auto"),
+		HealbeForwardMesh:  getEnvBool("HEALBE_FORWARD_MESH", false),
+		HealbeBridgeURL:    getEnv("HEALBE_BRIDGE_URL", ""),
+		DemoMode:           getEnvBool("DEMO_MODE", false),
+		PeopleSimEnabled:   getEnvBool("PEOPLE_SIM_ENABLED", false),
+		PeopleSimCount:     getEnvInt("PEOPLE_SIM_COUNT", 8),
+		PeopleSimRadiusKm:  getEnvFloat("PEOPLE_SIM_RADIUS_KM", 2),
+		PeopleSimCenterLat: getEnvFloat("PEOPLE_SIM_CENTER_LAT", 59.9343),
+		PeopleSimCenterLon: getEnvFloat("PEOPLE_SIM_CENTER_LON", 30.3351),
+		PeopleSimInterval:  getEnvInt("PEOPLE_SIM_INTERVAL", 5),
 	}
+
+	if cfg.DemoMode {
+		applyDemoDefaults(cfg)
+	}
+
 	return cfg
+}
+
+func applyDemoDefaults(cfg *Config) {
+	cfg.EnableBluetooth = false
+	cfg.EnableWiFi = false
+	cfg.ESP32HubEnabled = false
+	cfg.MQTTEnabled = false
+	cfg.DiscoveryInterval = 60
+
+	if cfg.ESP32COMPort == "" {
+		cfg.ESP32COMPort = "COM4"
+	}
+	if cfg.HealbeMAC == "" {
+		cfg.HealbeMAC = "8B:20:91:8E:F5:CB"
+	}
+	if cfg.HealbeMode == "" || cfg.HealbeMode == "auto" {
+		cfg.HealbeMode = "demo"
+	}
+	cfg.HealbeForwardMesh = true
+	cfg.PeopleSimEnabled = true
+	if cfg.PeopleSimCount < 6 {
+		cfg.PeopleSimCount = 8
+	}
 }
 
 func getEnv(key, defaultValue string) string {
@@ -68,6 +118,16 @@ func getEnvInt(key string, defaultValue int) int {
 		i, err := strconv.Atoi(value)
 		if err == nil {
 			return i
+		}
+	}
+	return defaultValue
+}
+
+func getEnvFloat(key string, defaultValue float64) float64 {
+	if value := os.Getenv(key); value != "" {
+		f, err := strconv.ParseFloat(value, 64)
+		if err == nil {
+			return f
 		}
 	}
 	return defaultValue
