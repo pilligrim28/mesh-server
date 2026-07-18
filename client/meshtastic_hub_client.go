@@ -15,6 +15,8 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
+const hubSeenPacketsCleanThreshold = 1000
+
 // MeshtasticHubClient двусторонний HTTP-мост к ESP32 с прошивкой Meshtastic.
 type MeshtasticHubClient struct {
 	baseURL    string
@@ -23,6 +25,7 @@ type MeshtasticHubClient struct {
 
 	configRequested bool
 	seenPacketIDs   map[uint32]struct{}
+	seenCount       int // счётчик для периодической очистки seenPacketIDs
 }
 
 // HubMessage входящее сообщение из mesh-сети через ESP32.
@@ -158,6 +161,12 @@ func (c *MeshtasticHubClient) PollMessages(ctx context.Context) ([]HubMessage, e
 			continue
 		}
 		c.seenPacketIDs[packet.GetId()] = struct{}{}
+		c.seenCount++
+		// Периодическая очистка seenPacketIDs для предотвращения утечки памяти
+		if c.seenCount > hubSeenPacketsCleanThreshold {
+			c.seenPacketIDs = make(map[uint32]struct{})
+			c.seenCount = 0
+		}
 		c.mu.Unlock()
 
 		toNode := formatNodeID(packet.GetTo())

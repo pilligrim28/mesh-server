@@ -13,14 +13,14 @@ import (
 	"mesh-server/repository"
 )
 
-// BLEScanner сканирует Bluetooth LE устройства через Windows Runtime API
+// BLEScanner сканирует Bluetooth LE устройства
 type BLEScanner struct {
 	repo         *repository.DiscoveryRepository
 	isScanning   bool
 	mu           sync.Mutex
 	cancel       context.CancelFunc
 	scanInterval int
-	esp32MAC     string // Сохраняем найденный MAC адрес ESP32
+	esp32MAC     string
 }
 
 // BLEDevice представляет BLE устройство
@@ -112,7 +112,6 @@ func (s *BLEScanner) scanOnce(ctx context.Context) {
 	for _, device := range devices {
 		s.foundDevice(device.Address, "bluetooth", device.RSSI, device.Name)
 
-		// Сохраняем MAC адрес если это ESP32
 		if device.IsESP32 {
 			s.esp32MAC = device.Address
 			log.Printf("Found ESP32 MAC: %s", device.Address)
@@ -175,12 +174,10 @@ foreach ($d in $deviceList) {
 }
 `, scanMs)
 
-	// Выполняем PowerShell скрипт
-	output, err := s.runPowerShell(powerShellScript)
+	output, err := s.runCommand("powershell", "-Command", powerShellScript)
 	if err != nil {
 		log.Printf("PowerShell BLE scan error: %v", err)
-		// Пробуем альтернативный метод через cmd
-		return s.scanBLEViaCMD()
+		return s.scanBLEWindowsFallback()
 	}
 
 	lines := strings.Split(output, "\n")
@@ -200,7 +197,6 @@ foreach ($d in $deviceList) {
 		rssi := 0
 		fmt.Sscanf(parts[2], "%d", &rssi)
 
-		// Проверяем является ли устройство ESP32 или Meshtastic
 		isESP32 := strings.Contains(strings.ToLower(name), "esp32") ||
 			strings.Contains(strings.ToLower(name), "meshtastic") ||
 			strings.Contains(strings.ToLower(name), "lilygo") ||
@@ -234,22 +230,20 @@ func dedupeBLEDevices(devices []BLEDevice) []BLEDevice {
 	return out
 }
 
-// scanBLEViaCMD альтернативный метод сканирования через cmd
-func (s *BLEScanner) scanBLEViaCMD() []BLEDevice {
+// scanBLEWindowsFallback альтернативный метод через Get-PnpDevice
+func (s *BLEScanner) scanBLEWindowsFallback() []BLEDevice {
 	var devices []BLEDevice
 
-	// Используем PowerShell для получения Bluetooth устройств
 	cmd := exec.Command("powershell", "-Command", `
 Get-PnpDevice -Class Bluetooth | Where-Object {$_.Status -eq 'OK'} | Select-Object FriendlyName
 `)
 
 	output, err := cmd.Output()
 	if err != nil {
-		log.Printf("CMD BLE scan error: %v", err)
+		log.Printf("Windows fallback BLE scan error: %v", err)
 		return devices
 	}
 
-	// Парсим вывод
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -262,7 +256,7 @@ Get-PnpDevice -Class Bluetooth | Where-Object {$_.Status -eq 'OK'} | Select-Obje
 
 		if isESP32 {
 			devices = append(devices, BLEDevice{
-				Address:      "UNKNOWN", // MAC адрес через CMD получить сложно
+				Address:      "UNKNOWN",
 				Name:         line,
 				RSSI:         -50,
 				IsESP32:      true,
@@ -274,9 +268,11 @@ Get-PnpDevice -Class Bluetooth | Where-Object {$_.Status -eq 'OK'} | Select-Obje
 	return devices
 }
 
-// runPowerShell выполняет PowerShell скрипт
-func (s *BLEScanner) runPowerShell(script string) (string, error) {
-	cmd := exec.Command("powershell", "-Command", script)
+// runCommand выполняет команду (powershell / bat / sh) с таймаутом
+func (s *BLEScanner) runCommand(name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -300,7 +296,6 @@ func (s *BLEScanner) foundDevice(address, deviceType string, rssi int, name stri
 		DiscoveredAt: time.Now(),
 	}
 
-	// Проверяем, есть ли уже такое устройство
 	existing, err := s.repo.GetByAddress(discoveredDevice.Address)
 	if err != nil {
 		if err := s.repo.Create(discoveredDevice); err != nil {
@@ -327,12 +322,10 @@ func (s *BLEScanner) GetESP32MACAddress() (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Сначала пробуем сохраненный MAC
 	if s.esp32MAC != "" {
 		return s.esp32MAC, nil
 	}
 
-	// Ищем в базе данных
 	devices, err := s.repo.GetByType("bluetooth")
 	if err != nil {
 		return "", err

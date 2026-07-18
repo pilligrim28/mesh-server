@@ -10,6 +10,9 @@ mesh-server
 *.db
 *.sqlite
 *.sqlite3
+*.db-shm
+*.db-wal
+*.db-journal
 
 # Environment
 .env
@@ -27,3 +30,16 @@ mesh-server
 # OS
 .DS_Store
 Thumbs.db
+
+# Python venv
+client/venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Build artifacts
+*.o
+*.a
+
+# Temp files
+_patch_*.py

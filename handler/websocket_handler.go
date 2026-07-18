@@ -68,14 +68,23 @@ func (h *WebSocketHandler) run() {
 
 		case message := <-h.broadcast:
 			h.mu.RLock()
+			var failed []*websocket.Conn
 			for client := range h.clients {
 				if err := client.WriteMessage(websocket.TextMessage, message); err != nil {
 					log.Printf("Error sending message to client: %v", err)
-					client.Close()
-					delete(h.clients, client)
+					failed = append(failed, client)
 				}
 			}
 			h.mu.RUnlock()
+			// Удаляем отвалившиеся соединения под write lock
+			if len(failed) > 0 {
+				h.mu.Lock()
+				for _, client := range failed {
+					client.Close()
+					delete(h.clients, client)
+				}
+				h.mu.Unlock()
+			}
 		}
 	}
 }

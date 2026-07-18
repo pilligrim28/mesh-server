@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os/exec"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -115,28 +116,19 @@ func (c *ESP32BluetoothClient) sendMessageViaWiFi(ctx context.Context, msg *mode
 	}
 
 	for _, ip := range ips {
-		url := fmt.Sprintf("http://%s/api/message", ip)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
-		if err != nil {
-			continue
-		}
-
-		req.Body = nil
-		req.ContentLength = int64(len(jsonData))
-		req.Header.Set("Content-Type", "application/json")
-
 		client := &http.Client{
 			Timeout: c.timeout,
 		}
 
-		// Пересоздаем запрос с телом
-		req, err = http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+		url := fmt.Sprintf("http://%s/api/message", ip)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(jsonData)))
 		if err != nil {
 			continue
 		}
 
-		// Для отправки с телом используем другой подход
-		resp, err := client.Post(url, "application/json", nil)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := client.Do(req)
 		if err == nil {
 			resp.Body.Close()
 			log.Printf("Message sent to ESP32 at %s", ip)
@@ -245,26 +237,104 @@ func ScanForESP32(ctx context.Context) ([]string, error) {
 
 // scanLocalNetwork сканирует локальную сеть через ARP таблицу
 func scanLocalNetwork() []string {
+	if runtime.GOOS == "linux" {
+		return scanLocalNetworkLinux()
+	}
+	return scanLocalNetworkWindows()
+}
+
+// scanLocalNetworkLinux сканирует ARP таблицу на Linux
+func scanLocalNetworkLinux() []string {
 	var devices []string
 
-	// Выполняем arp -a для получения таблицы ARP
+	// Читаем /proc/net/arp на Linux
+	cmd := exec.Command("cat", "/proc/net/arp")
+	output, err := cmd.Output()
+	if err != nil {
+		// Пробуем через ip neigh
+		return scanLocalNetworkIPNeigh()
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for i, line := range lines {
+		if i == 0 {
+			continue // пропускаем заголовок
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) >= 4 {
+			ip := parts[0]
+			flags := parts[2] // FLAGS: 0x2 = incomplete, 0x6 = reachable
+			mac := parts[3]
+
+			// Пропускаем incomplete записи и broadcast
+			if flags == "0x0" || mac == "00:00:00:00:00:00" {
+				continue
+			}
+			if strings.Contains(ip, "255") || strings.Contains(ip, "224") {
+				continue
+			}
+			if net.ParseIP(ip) != nil && strings.Contains(ip, ".") {
+				devices = append(devices, ip)
+			}
+		}
+	}
+
+	return devices
+}
+
+// scanLocalNetworkIPNeigh альтернатива через ip neigh (modern Linux)
+func scanLocalNetworkIPNeigh() []string {
+	var devices []string
+
+	cmd := exec.Command("ip", "neigh", "show")
+	output, err := cmd.Output()
+	if err != nil {
+		return devices
+	}
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) >= 5 {
+			ip := parts[0]
+			if strings.Contains(ip, "255") || strings.Contains(ip, "224") {
+				continue
+			}
+			if net.ParseIP(ip) != nil && strings.Contains(ip, ".") {
+				devices = append(devices, ip)
+			}
+		}
+	}
+
+	return devices
+}
+
+// scanLocalNetworkWindows сканирует ARP таблицу на Windows
+func scanLocalNetworkWindows() []string {
+	var devices []string
+
 	cmd := exec.Command("arp", "-a")
 	output, err := cmd.Output()
 	if err != nil {
 		return devices
 	}
 
-	// Парсим вывод ARP таблицы
 	lines := strings.Split(string(output), "\n")
 	for _, line := range lines {
 		parts := strings.Fields(line)
 		if len(parts) >= 2 {
 			ip := parts[0]
-			// Пропускаем широковещательные и multicast адреса
 			if strings.Contains(ip, "255") || strings.Contains(ip, "224") {
 				continue
 			}
-			// Проверяем что это IPv4 адрес
 			if net.ParseIP(ip) != nil && strings.Contains(ip, ".") {
 				devices = append(devices, ip)
 			}

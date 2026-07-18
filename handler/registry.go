@@ -3,6 +3,7 @@ package handler
 import (
 	"mesh-server/client"
 	"mesh-server/discovery"
+	"mesh-server/ml"
 	"mesh-server/repository"
 )
 
@@ -15,6 +16,8 @@ type Handlers struct {
 	Map       *MapHandler
 	WS        *WebSocketHandler
 	Discovery *DiscoveryHandler
+	Route     *RouteHandler
+	ML        *MLHandler
 }
 
 // NewHandlers wires HTTP handlers and shared dependencies.
@@ -25,6 +28,9 @@ func NewHandlers(
 	messageRepo *repository.MessageRepository,
 	discoveryService *discovery.DiscoveryService,
 	esp32URL string,
+	routeRepo *repository.RouteRepository,
+	detector *ml.AnomalyDetector,
+	predictor *ml.Predictor,
 ) *Handlers {
 	wsHandler := NewWebSocketHandler()
 	esp32Client := client.NewESP32Client(esp32URL)
@@ -37,6 +43,8 @@ func NewHandlers(
 		Map:       NewMapHandler(deviceRepo),
 		WS:        wsHandler,
 		Discovery: NewDiscoveryHandler(discoveryService),
+		Route:     NewRouteHandler(routeRepo, deviceRepo),
+		ML:        NewMLHandler(detector, predictor, routeRepo),
 	}
 }
 

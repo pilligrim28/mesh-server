@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -18,12 +17,14 @@ import (
 )
 
 const (
-	serialStart1         = 0x94
-	serialStart2         = 0xC3
-	serialHeaderLen      = 4
-	serialMaxPacketSize  = 512
-	serialBroadcastNum   = 0xFFFFFFFF
+	serialStart1        = 0x94
+	serialStart2        = 0xC3
+	serialHeaderLen     = 4
+	serialMaxPacketSize = 512
+	serialBroadcastNum  = 0xFFFFFFFF
 )
+
+const seenPacketsCleanThreshold = 1000
 
 // MeshtasticSerialClient клиент для подключения к Meshtastic через COM-порт (USB).
 type MeshtasticSerialClient struct {
@@ -35,8 +36,10 @@ type MeshtasticSerialClient struct {
 	ctx         context.Context
 	cancel      context.CancelFunc
 	messageCh   chan SerialMessage
+	positionCh  chan SerialPosition
 	nodeNum     uint32
 	seenPackets map[uint32]struct{}
+	seenCount   int // счётчик для периодической очистки seenPackets
 }
 
 // SerialMessage сообщение от/к ESP32 через COM-порт.
@@ -47,12 +50,35 @@ type SerialMessage struct {
 	Inbound  bool
 }
 
-// NewMeshtasticSerialClient создает клиент для подключения через COM-порт.
+// SerialPosition позиция устройства из mesh-сети
+type SerialPosition struct {
+	NodeID    string
+	Latitude  float64
+	Longitude float64
+	Altitude  int32
+}
+
+// SerialConfig конфигурация COM-порта
+type SerialConfig struct {
+	Port     string
+	BaudRate uint
+}
+
+// DefaultSerialConfig конфигурация по умолчанию для Meshtastic
+func DefaultSerialConfig() SerialConfig {
+	return SerialConfig{
+		Port:     "",
+		BaudRate: 115200,
+	}
+}
+
+// NewMeshtasticSerialClient создает клиент для подключения через COM-порт
 func NewMeshtasticSerialClient(port string) *MeshtasticSerialClient {
 	return &MeshtasticSerialClient{
 		port:        port,
 		baudRate:    115200,
 		messageCh:   make(chan SerialMessage, 100),
+		positionCh:  make(chan SerialPosition, 100),
 		seenPackets: make(map[uint32]struct{}),
 	}
 }
@@ -199,10 +225,22 @@ func (c *MeshtasticSerialClient) handleMeshPacket(packet *pb.MeshPacket) {
 	if data == nil {
 		return
 	}
-	if data.GetPortnum() != pb.PortNum_TEXT_MESSAGE_APP {
-		return
-	}
 
+	portnum := data.GetPortnum()
+
+	switch portnum {
+	case pb.PortNum_TEXT_MESSAGE_APP:
+		c.handleTextMessage(packet, data)
+
+	case pb.PortNum_POSITION_APP:
+		c.handlePositionMessage(packet, data)
+
+	default:
+		// Игнорируем другие типы пакетов (NODEINFO, TELEMETRY и т.д.)
+	}
+}
+
+func (c *MeshtasticSerialClient) handleTextMessage(packet *pb.MeshPacket, data *pb.Data) {
 	text := string(data.GetPayload())
 	if text == "" {
 		return
@@ -214,6 +252,11 @@ func (c *MeshtasticSerialClient) handleMeshPacket(packet *pb.MeshPacket) {
 		return
 	}
 	c.seenPackets[packet.GetId()] = struct{}{}
+	c.seenCount++
+	if c.seenCount > seenPacketsCleanThreshold {
+		c.seenPackets = make(map[uint32]struct{})
+		c.seenCount = 0
+	}
 	c.mu.Unlock()
 
 	toNode := formatSerialNodeID(packet.GetTo())
@@ -232,6 +275,46 @@ func (c *MeshtasticSerialClient) handleMeshPacket(packet *pb.MeshPacket) {
 	case c.messageCh <- msg:
 	default:
 		log.Printf("Meshtastic Serial: буфер сообщений переполнен")
+	}
+}
+
+func (c *MeshtasticSerialClient) handlePositionMessage(packet *pb.MeshPacket, data *pb.Data) {
+	// Декодируем Position из payload
+	position := &pb.Position{}
+	if err := proto.Unmarshal(data.GetPayload(), position); err != nil {
+		log.Printf("Meshtastic Serial: ошибка декодирования позиции: %v", err)
+		return
+	}
+
+	nodeID := formatSerialNodeID(packet.GetFrom())
+	var lat, lon float64
+	var alt int32
+	if position.LatitudeI != nil {
+		lat = float64(*position.LatitudeI) / 1e7
+	}
+	if position.LongitudeI != nil {
+		lon = float64(*position.LongitudeI) / 1e7
+	}
+	if position.Altitude != nil {
+		alt = *position.Altitude
+	}
+
+	if lat == 0 && lon == 0 {
+		return // Игнорируем нулевые координаты
+	}
+
+	pos := SerialPosition{
+		NodeID:    nodeID,
+		Latitude:  lat,
+		Longitude: lon,
+		Altitude:  alt,
+	}
+
+	select {
+	case c.positionCh <- pos:
+		log.Printf("Meshtastic Serial: позиция от %s: lat=%.6f, lon=%.6f", nodeID, lat, lon)
+	default:
+		log.Printf("Meshtastic Serial: буфер позиций переполнен")
 	}
 }
 
@@ -365,6 +448,10 @@ func (c *MeshtasticSerialClient) GetMessages() <-chan SerialMessage {
 	return c.messageCh
 }
 
+func (c *MeshtasticSerialClient) GetPositions() <-chan SerialPosition {
+	return c.positionCh
+}
+
 func (c *MeshtasticSerialClient) IsConnected() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -392,9 +479,6 @@ func ScanForDevices() ([]string, error) {
 	ports, err := serial.GetPortsList()
 	if err != nil {
 		return nil, err
-	}
-	if len(ports) == 0 {
-		return ports, nil
 	}
 	return ports, nil
 }
@@ -451,13 +535,4 @@ func (c *MeshtasticSerialClient) parseBinaryMessage(data []byte) (*SerialMessage
 		Text:     string(dataMsg.GetPayload()),
 		Inbound:  true,
 	}, nil
-}
-
-// parseMessage — legacy text parser, не используется официальной прошивкой.
-func (c *MeshtasticSerialClient) parseMessage(line string) *SerialMessage {
-	if !strings.Contains(line, "from !") {
-		return nil
-	}
-	_ = bytes.Buffer{}
-	return nil
 }

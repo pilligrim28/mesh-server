@@ -28,6 +28,8 @@ type MeshtasticService struct {
 	messageRepo *repository.MessageRepository
 	broadcaster Broadcaster
 	onMessage   func(*MeshtasticMessage)
+	ctx         context.Context
+	cancel      context.CancelFunc
 }
 
 // MQTTConfig конфигурация MQTT подключения
@@ -112,6 +114,9 @@ func (s *MeshtasticService) Start(ctx context.Context) error {
 		return nil
 	}
 
+	// Создаём собственный контекст для управления фоновыми горутинами
+	s.ctx, s.cancel = context.WithCancel(ctx)
+
 	log.Printf("Connecting to MQTT broker %s...", s.config.Server)
 
 	opts := mqtt.NewClientOptions()
@@ -144,11 +149,14 @@ func (s *MeshtasticService) Start(ctx context.Context) error {
 	token.Wait()
 
 	if token.Error() != nil {
+		if s.cancel != nil {
+			s.cancel()
+		}
 		return fmt.Errorf("failed to connect to MQTT: %w", token.Error())
 	}
 
 	if s.config.MapReportingEnabled {
-		go s.startMapReporting(ctx)
+		go s.startMapReporting(s.ctx)
 	}
 
 	return nil
@@ -158,6 +166,11 @@ func (s *MeshtasticService) Start(ctx context.Context) error {
 func (s *MeshtasticService) Stop() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if s.cancel != nil {
+		s.cancel()
+		s.cancel = nil
+	}
 
 	if s.client != nil && s.connected {
 		s.client.Disconnect(1000)
@@ -203,6 +216,12 @@ func (s *MeshtasticService) handleMessage(topic string, payload []byte) {
 
 	if msg.To == 0xFFFFFFFF {
 		toNode = "broadcast"
+	}
+
+	// Проверяем, является ли сообщение позицией
+	if msg.Decoded.PortNum == "POSITION_APP" {
+		s.handleMQTTPosition(msg, fromNode)
+		return
 	}
 
 	device, err := s.deviceRepo.GetByNodeID(fromNode)
@@ -338,7 +357,7 @@ func (s *MeshtasticService) sendMapReport() {
 	}
 
 	report := MapReport{
-		LongName:        "Mesh Server",
+		LongName:        "СтражСети",
 		ShortName:       "MS",
 		ID:              "!server001",
 		Latitude:        lat,
@@ -385,9 +404,12 @@ func (s *MeshtasticService) GetStatus() map[string]interface{} {
 }
 
 func (s *MeshtasticService) Reconnect() error {
-	s.Stop()
+	parentCtx := context.Background()
+	if s.cancel != nil {
+		s.cancel()
+	}
 	time.Sleep(1 * time.Second)
-	return s.Start(context.Background())
+	return s.Start(parentCtx)
 }
 
 func (s *MeshtasticService) SetOnMessage(handler func(*MeshtasticMessage)) {
@@ -404,6 +426,78 @@ func parseNodeID(nodeID string) uint32 {
 	var result uint32
 	fmt.Sscanf(nodeID, "%x", &result)
 	return result
+}
+
+// handleMQTTPosition обрабатывает позицию из MQTT (POSITION_APP)
+func (s *MeshtasticService) handleMQTTPosition(msg MeshtasticMessage, fromNode string) {
+	// Декодируем позицию из decoded.payload (JSON)
+	type PositionPayload struct {
+		LatitudeI  int32 `json:"latitude_i"`
+		LongitudeI int32 `json:"longitude_i"`
+		Altitude   int32 `json:"altitude"`
+		// Fallback: some firmwares use float fields
+		Latitude  float64 `json:"latitude"`
+		Longitude float64 `json:"longitude"`
+	}
+
+	payloadBytes, err := json.Marshal(msg.Decoded.Payload)
+	if err != nil {
+		log.Printf("MQTT: failed to marshal position payload: %v", err)
+		return
+	}
+
+	var pos PositionPayload
+	if err := json.Unmarshal(payloadBytes, &pos); err != nil {
+		log.Printf("MQTT: failed to parse position payload: %v", err)
+		return
+	}
+
+	var lat, lon float64
+	if pos.LatitudeI != 0 || pos.LongitudeI != 0 {
+		lat = float64(pos.LatitudeI) / 1e7
+		lon = float64(pos.LongitudeI) / 1e7
+	} else {
+		lat = pos.Latitude
+		lon = pos.Longitude
+	}
+
+	if lat == 0 && lon == 0 {
+		return
+	}
+
+	log.Printf("MQTT: позиция от %s: lat=%.6f, lon=%.6f", fromNode, lat, lon)
+
+	device, err := s.deviceRepo.GetByNodeID(fromNode)
+	if err != nil {
+		device = &models.Device{
+			NodeID:    fromNode,
+			Name:      fmt.Sprintf("Node %s", fromNode),
+			Latitude:  lat,
+			Longitude: lon,
+			Altitude:  float64(pos.Altitude),
+			LastSeen:  time.Now(),
+		}
+		if err := s.deviceRepo.Create(device); err != nil {
+			log.Printf("MQTT: failed to create device: %v", err)
+			return
+		}
+	} else {
+		_ = s.deviceRepo.UpdatePosition(device.ID, lat, lon, float64(pos.Altitude))
+		_ = s.deviceRepo.UpdateLastSeen(device.ID)
+	}
+
+	if s.broadcaster != nil {
+		s.broadcaster.Broadcast(map[string]interface{}{
+			"type": "device_position",
+			"position": map[string]interface{}{
+				"node_id":   fromNode,
+				"latitude":  lat,
+				"longitude": lon,
+				"altitude":  pos.Altitude,
+			},
+			"source": "mqtt",
+		})
+	}
 }
 
 func GetDefaultMQTTConfig() MQTTConfig {

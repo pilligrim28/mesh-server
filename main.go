@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"strings"
@@ -12,6 +13,8 @@ import (
 	"mesh-server/database"
 	"mesh-server/discovery"
 	"mesh-server/handler"
+	"mesh-server/meshtastic"
+	"mesh-server/ml"
 	"mesh-server/repository"
 	"mesh-server/service"
 	"mesh-server/simulator"
@@ -40,6 +43,11 @@ func main() {
 	alertRepo := repository.NewAlertRepository(db.DB)
 	messageRepo := repository.NewMessageRepository(db.DB, deviceRepo)
 	discoveryRepo := repository.NewDiscoveryRepository(db.DB)
+	routeRepo := repository.NewRouteRepository(db.DB)
+
+	// Инициализация ML
+	anomalyDetector := ml.NewAnomalyDetector()
+	predictor := ml.NewPredictor()
 
 	// Инициализация BLE сканера
 	bleScanner := discovery.NewBLEScanner(discoveryRepo)
@@ -49,7 +57,7 @@ func main() {
 
 	// Инициализация сервисов и HTTP-обработчиков
 	services := service.NewServices(discoveryRepo, deviceRepo)
-	handlers := handler.NewHandlers(deviceRepo, metricsRepo, alertRepo, messageRepo, services.DiscoveryService, cfg.ESP32URL)
+	handlers := handler.NewHandlers(deviceRepo, metricsRepo, alertRepo, messageRepo, services.DiscoveryService, cfg.ESP32URL, routeRepo, anomalyDetector, predictor)
 	defer handlers.Close()
 
 	// Инициализация ESP32 handler
@@ -115,13 +123,20 @@ func main() {
 		defer bleScanner.Stop()
 	}
 
-	// Инициализация симулятора носимого устройства
-	sim := simulator.NewSimulator(deviceRepo, metricsRepo, alertRepo)
-	if !cfg.PeopleSimEnabled && !cfg.DemoMode {
-		sim.Start(5 * time.Second)
+	// Инициализация симуляторов (8 штук)
+	const numSimulators = 8
+	simulators := make([]*simulator.Simulator, numSimulators)
+	for i := 0; i < numSimulators; i++ {
+		simulators[i] = simulator.NewSimulator(i, deviceRepo, metricsRepo, alertRepo, routeRepo)
+		simulators[i].Start(time.Duration(4+i) * time.Second) // 4-11 секунд
 	}
-	defer sim.Stop()
+	defer func() {
+		for _, s := range simulators {
+			s.Stop()
+		}
+	}()
 
+	// Инициализация симулятора передвижения людей
 	peopleSim := simulator.NewPeopleMovementSimulator(
 		deviceRepo, metricsRepo, alertRepo,
 		simulator.PeopleMovementConfig{
@@ -140,8 +155,33 @@ func main() {
 	}
 
 	// Обработчики симуляторов
-	simHandler := handler.NewSimulatorHandler(sim)
+	simHandler := handler.NewSimulatorHandler(simulators)
 	peopleSimHandler := handler.NewPeopleSimHandler(peopleSim)
+
+	// Запуск Meshtastic HTTP сервера (для приложения Meshtastic)
+	meshtasticServer := meshtastic.NewMeshtasticServer(deviceRepo, messageRepo)
+	go func() {
+		log.Printf("Meshtastic API server listening on :4403")
+		if err := http.ListenAndServe(":4403", meshtasticServer.GetMux()); err != nil {
+			log.Printf("Meshtastic server error: %v", err)
+		}
+	}()
+
+	// Запуск mDNS (объявление _meshtastic._tcp для обнаружения приложением)
+	mdnsServer := meshtastic.NewMDNSServer("stражсеть-hub", 4403)
+	if err := mdnsServer.Start(); err != nil {
+		log.Printf("Warning: mDNS not started: %v", err)
+	}
+	defer mdnsServer.Stop()
+
+	// Запуск BLE сервера (для обнаружения приложением Meshtastic через Bluetooth)
+	bleServer := meshtastic.NewBLEServer("Meshtastic Hub")
+	if cfg.EnableBluetooth {
+		if err := bleServer.Start(); err != nil {
+			log.Printf("Warning: BLE server not started: %v", err)
+		}
+	}
+	defer bleServer.Stop()
 
 	// Инициализация ESP32 Hub (мост между mesh-сетями и сервером)
 	hubURL := cfg.ESP32URL
@@ -569,17 +609,96 @@ func main() {
 		}
 	})
 
-	// Health check
+	// Health check and API status
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
 
+	// Routes API (маршруты сотрудников)
+	mux.HandleFunc("/api/routes", func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			handlers.Route.GetAll(w, r)
+		case http.MethodPost:
+			handlers.Route.Create(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/routes/record", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			handlers.Route.RecordPoint(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/routes/points", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			handlers.Route.GetPoints(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/routes/delete", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			handlers.Route.Delete(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// ML API (аномалии и предсказания)
+	mux.HandleFunc("/api/ml/anomalies", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			handlers.ML.GetAnomalies(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/ml/predict", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			handlers.ML.PredictPosition(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+	mux.HandleFunc("/api/ml/analyze", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			handlers.ML.AnalyzeDevice(w, r)
+		} else {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	})
+
+	// BLE status
+	mux.HandleFunc("/api/ble/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(bleServer.GetInfo())
+	})
+
+	// mDNS status
+	mux.HandleFunc("/api/mdns/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(mdnsServer.GetInfo())
+	})
+
 	// Simulator API
 	mux.HandleFunc("/api/simulator/status", simHandler.Status)
+	mux.HandleFunc("/api/simulator/status/all", simHandler.StatusAll)
 	mux.HandleFunc("/api/simulator/start", simHandler.Start)
+	mux.HandleFunc("/api/simulator/start/all", simHandler.StartAll)
 	mux.HandleFunc("/api/simulator/stop", simHandler.Stop)
+	mux.HandleFunc("/api/simulator/stop/all", simHandler.StopAll)
 	mux.HandleFunc("/api/simulator/event", simHandler.Event)
+	mux.HandleFunc("/api/simulator/route", simHandler.Route)
+	mux.HandleFunc("/api/simulator/speed", simHandler.SetSpeed)
+	mux.HandleFunc("/api/simulator/locations", simHandler.Locations)
+	mux.HandleFunc("/api/simulator/routes", simHandler.Routes)
+	mux.HandleFunc("/api/simulator/history", simHandler.RouteHistory)
+	mux.HandleFunc("/api/simulator/history/all", simHandler.RouteHistoryAll)
+	mux.HandleFunc("/api/simulator/clear-history", simHandler.ClearHistory)
+	mux.HandleFunc("/api/simulator/clear-history/all", simHandler.ClearHistoryAll)
 
 	mux.HandleFunc("/api/people-sim/status", peopleSimHandler.Status)
 	mux.HandleFunc("/api/people-sim/zone", peopleSimHandler.Zone)
@@ -679,7 +798,14 @@ func noCacheStatic(next http.Handler) http.Handler {
 
 func withLogging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("%s %s %s", r.RemoteAddr, r.Method, r.URL.Path)
+		// Пропускаем логгирование для часто вызываемых эндпоинтов
+		path := r.URL.Path
+		if strings.HasPrefix(path, "/static/") || path == "/ws" || path == "/health" ||
+			strings.HasPrefix(path, "/api/simulator") || strings.HasPrefix(path, "/api/people-sim") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		log.Printf("%s %s %s", r.RemoteAddr, r.Method, path)
 		next.ServeHTTP(w, r)
 	})
 }

@@ -71,3 +71,35 @@ type Message struct {
 	Direction string    `json:"direction"` // "inbound", "outbound"
 	SentAt    time.Time `json:"sent_at"`
 }
+
+// Route - маршрут сотрудника
+type Route struct {
+	ID          int64           `json:"id"`
+	Name        string          `json:"name"`
+	Description string          `json:"description,omitempty"`
+	DeviceID    int64           `json:"device_id,omitempty"`
+	Waypoints   interface{}     `json:"waypoints"` // []ml.Point2D as JSON
+	CreatedAt   time.Time       `json:"created_at"`
+}
+
+// RoutePoint - точка на маршруте (история перемещений)
+type RoutePoint struct {
+	ID        int64     `json:"id"`
+	DeviceID  int64     `json:"device_id"`
+	RouteID   *int64    `json:"route_id,omitempty"`
+	Latitude  float64   `json:"latitude"`
+	Longitude float64   `json:"longitude"`
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// Anomaly - обнаруженная аномалия
+type Anomaly struct {
+	ID            int64     `json:"id"`
+	DeviceID      int64     `json:"device_id"`
+	Type          string    `json:"type"`
+	MetricValue   float64   `json:"metric_value"`
+	ExpectedRange string    `json:"expected_range,omitempty"`
+	Severity      string    `json:"severity"`
+	Description   string    `json:"description"`
+	Timestamp     time.Time `json:"timestamp"`
+}
