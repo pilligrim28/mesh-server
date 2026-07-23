@@ -32,8 +32,39 @@ let trailEnabled = true;
 const MAX_TRAIL_POINTS = 20;  // keep last 20 positions per device
 const TRAIL_POLL_INTERVAL = 30000;
 
+// ===== Auth: global fetch wrapper for 401 redirect =====
+const _origFetch = window.fetch;
+window.fetch = async function(...args) {
+    const resp = await _origFetch.apply(this, args);
+    if (resp.status === 401 && !args[0].toString().includes('/api/auth/')) {
+        window.location.href = '/';
+        return resp;
+    }
+    return resp;
+};
+
+// ===== Auth: load current user info =====
+let currentUser = null;
+async function loadCurrentUser() {
+    try {
+        const resp = await _origFetch('/api/auth/me');
+        if (!resp.ok) {
+            window.location.href = '/';
+            return;
+        }
+        currentUser = await resp.json();
+        const nameEl = document.getElementById('userNameText');
+        if (nameEl) {
+            nameEl.textContent = currentUser.name || currentUser.username;
+        }
+    } catch (e) {
+        window.location.href = '/';
+    }
+}
+
 // Инициализация
 document.addEventListener('DOMContentLoaded', () => {
+    loadCurrentUser();
     initMap();
     initTabs();
     initDeviceListClicks();

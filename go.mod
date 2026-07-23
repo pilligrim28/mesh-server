@@ -15,7 +15,8 @@ require (
 	github.com/go-ble/ble v0.0.0-20240122180141-8c5522f54333 // indirect
 	github.com/paypal/gatt v0.0.0-20151011220935-4ae819d591cf // indirect
 	github.com/pkg/errors v0.8.1 // indirect
-	golang.org/x/net v0.44.0 // indirect
+	golang.org/x/crypto v0.54.0 // indirect
+	golang.org/x/net v0.56.0 // indirect
 	golang.org/x/sync v0.17.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
@@ -28,7 +29,7 @@ require (
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
-	golang.org/x/sys v0.37.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 	modernc.org/libc v1.67.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect

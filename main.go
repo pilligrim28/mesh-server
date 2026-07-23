@@ -44,6 +44,8 @@ func main() {
 	messageRepo := repository.NewMessageRepository(db.DB, deviceRepo)
 	discoveryRepo := repository.NewDiscoveryRepository(db.DB)
 	routeRepo := repository.NewRouteRepository(db.DB)
+	userRepo := repository.NewUserRepository(db.DB)
+	sessionRepo := repository.NewSessionRepository(db.DB)
 
 	// Инициализация ML
 	anomalyDetector := ml.NewAnomalyDetector()
@@ -272,8 +274,18 @@ func main() {
 
 	systemHandler := handler.NewSystemHandler(cfg.DemoMode, cfg.ServerPort, serialService)
 
+	// Инициализация обработчика аутентификации
+	authHandler := handler.NewAuthHandler(userRepo, sessionRepo)
+
 	// Настройка роутинга
 	mux := http.NewServeMux()
+
+	// Auth API (без проверки сессии)
+	mux.HandleFunc("/api/auth/login", authHandler.Login)
+	mux.HandleFunc("/api/auth/logout", authHandler.Logout)
+	mux.HandleFunc("/api/auth/me", authHandler.Me)
+	mux.HandleFunc("/api/auth/profile", authHandler.UpdateProfile)
+	mux.HandleFunc("/api/auth/password", authHandler.ChangePassword)
 
 	// Devices API
 	mux.HandleFunc("/api/devices", func(w http.ResponseWriter, r *http.Request) {
@@ -766,20 +778,39 @@ func main() {
 		}
 	})
 
-	// Static files (frontend) — без кэша для JS/CSS при разработке
+	// Static files (frontend)
 	mux.Handle("/static/", noCacheStatic(http.StripPrefix("/static/", http.FileServer(http.Dir("static")))))
 
-	// Index page
+	// Root handler — проверяет сессию и направляет на login.html или index.html
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" {
-			http.ServeFile(w, r, "static/index.html")
-		} else {
+		if r.URL.Path != "/" {
 			http.NotFound(w, r)
+			return
 		}
+
+		// Проверяем сессию через куку
+		cookie, err := r.Cookie("session_token")
+		if err != nil || cookie.Value == "" {
+			http.ServeFile(w, r, "static/login.html")
+			return
+		}
+
+		session, err := sessionRepo.GetByToken(cookie.Value)
+		if err != nil {
+			http.ServeFile(w, r, "static/login.html")
+			return
+		}
+
+		_ = session // сессия валидна
+		http.ServeFile(w, r, "static/index.html")
 	})
 
-	// Middleware для логгирования и CORS
-	loggedMux := withLogging(withCORS(mux))
+	// Middleware chain: CORS → Logging → API Auth
+	apiMux := http.NewServeMux()
+	apiMux.Handle("/api/", authHandler.AuthMiddleware(mux))
+	apiMux.Handle("/", mux)
+
+	loggedMux := withLogging(withCORS(apiMux))
 
 	log.Printf("Server listening on :%s", cfg.ServerPort)
 	if err := http.ListenAndServe(":"+cfg.ServerPort, loggedMux); err != nil {

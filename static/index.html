@@ -521,10 +521,15 @@
                     </div>
                 </div>
                 <small class="text-muted" id="lastUpdate" style="font-size:0.7rem;">Обновление...</small>
-                <div class="mt-2 d-flex flex-wrap gap-1">
+                <div class="mt-2 d-flex flex-wrap gap-1 align-items-center">
                     <span class="badge bg-success" id="simStatus" style="font-size:0.7rem;">🟢 Активен</span>
                     <span class="badge bg-warning text-dark d-none" id="demoBadge" style="font-size:0.7rem;">ДЕМО</span>
                     <span class="badge bg-info text-dark d-none" id="esp32Badge" style="font-size:0.7rem;">ESP32</span>
+                    <span class="ms-auto" id="userBadge" style="font-size:0.7rem;">
+                        <a href="/profile.html" style="color:var(--accent);text-decoration:none;font-weight:600;" id="userNameLink">
+                            <i class="bi bi-person-circle"></i> <span id="userNameText">—</span>
+                        </a>
+                    </span>
                 </div>
                 <div id="demoBanner" class="alert alert-warning py-1 px-2 mt-2 mb-0 small d-none"></div>
             </div>

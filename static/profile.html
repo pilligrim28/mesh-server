@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>СтражСети — Личный кабинет</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --bg-main: #0a0e1a;
+            --bg-card: #121d33;
+            --bg-card-header: #0b1a30;
+            --border-color: #1e3456;
+            --text-primary: #e8edf5;
+            --text-secondary: #8fa3c4;
+            --text-muted: #5e7a9e;
+            --accent: #22d3a7;
+            --accent-glow: rgba(34, 211, 167, 0.25);
+        }
+        body {
+            background: var(--bg-main);
+            color: var(--text-primary);
+            min-height: 100vh;
+            margin: 0;
+            font-size: 15px;
+        }
+        .topbar {
+            background: linear-gradient(135deg, #0a1628, #0d2137, #112d4e);
+            border-bottom: 2px solid var(--accent);
+            padding: 0.8rem 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .topbar-left {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .topbar-logo {
+            width: 36px; height: 36px;
+            background: linear-gradient(135deg, var(--accent), #2dd4bf);
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 1.1rem;
+        }
+        .topbar-logo i { color: #0a1628; }
+        .topbar h5 { margin: 0; font-weight: 700; letter-spacing: 0.5px; }
+        .topbar small { color: var(--text-secondary); font-size: 0.75rem; }
+        .container { max-width: 640px; padding: 2rem 1rem; }
+        .section-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 0.6rem;
+            margin-bottom: 1.5rem;
+        }
+        .section-card-header {
+            background: var(--bg-card-header);
+            border-bottom: 1px solid var(--border-color);
+            border-radius: 0.6rem 0.6rem 0 0;
+            padding: 0.75rem 1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .section-card-header i { color: var(--accent); }
+        .section-card-body { padding: 1.25rem; }
+        .form-label {
+            color: var(--text-primary);
+            font-weight: 600;
+            margin-bottom: 0.35rem;
+            font-size: 0.9rem;
+        }
+        .form-control {
+            background: #0b1120;
+            border: 1px solid var(--border-color);
+            color: #fff;
+            border-radius: 0.4rem;
+            padding: 0.6rem 0.85rem;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        .form-control:focus {
+            background: #0b1120;
+            border-color: var(--accent);
+            color: #fff;
+            box-shadow: 0 0 0 2px var(--accent-glow);
+        }
+        .form-control::placeholder { color: #4a6282; opacity: 1; }
+        .btn-accent {
+            background: linear-gradient(135deg, var(--accent), #2dd4bf);
+            color: #0a1628;
+            font-weight: 700;
+            border: none;
+            border-radius: 0.4rem;
+            padding: 0.55rem 1rem;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: opacity 0.2s ease;
+        }
+        .btn-accent:hover { opacity: 0.9; }
+        .btn-accent:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-outline-dark {
+            background: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            border-radius: 0.4rem;
+            padding: 0.55rem 1rem;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: border-color 0.2s ease;
+        }
+        .btn-outline-dark:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+        .btn-danger-outline {
+            background: transparent;
+            border: 1px solid rgba(220, 53, 69, 0.4);
+            color: #ff6b7a;
+            border-radius: 0.4rem;
+            padding: 0.55rem 1rem;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: border-color 0.2s ease;
+        }
+        .btn-danger-outline:hover {
+            border-color: #dc3545;
+            background: rgba(220, 53, 69, 0.1);
+        }
+        .user-info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.6rem 0;
+            border-bottom: 1px solid rgba(30,52,86,0.3);
+        }
+        .user-info-row:last-child { border-bottom: none; }
+        .user-info-label { color: var(--text-secondary); font-size: 0.9rem; }
+        .user-info-value { color: #fff; font-weight: 500; }
+        .alert-msg {
+            display: none;
+            padding: 0.6rem 0.8rem;
+            border-radius: 0.4rem;
+            font-size: 0.85rem;
+            margin-bottom: 0.75rem;
+        }
+        .alert-msg.success { background: rgba(34, 211, 167, 0.15); border: 1px solid rgba(34, 211, 167, 0.3); color: var(--accent); }
+        .alert-msg.error { background: rgba(220, 53, 69, 0.15); border: 1px solid rgba(220, 53, 69, 0.3); color: #ff6b7a; }
+        .back-link { color: var(--accent); text-decoration: none; font-size: 0.9rem; display: inline-flex; align-items: center; gap: 0.3rem; }
+        .back-link:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <div class="topbar-left">
+            <div class="topbar-logo"><i class="bi bi-shield-lock-fill"></i></div>
+            <div>
+                <h5>СтражСети</h5>
+                <small>Личный кабинет</small>
+            </div>
+        </div>
+        <a href="/" class="back-link"><i class="bi bi-arrow-left"></i> К панели мониторинга</a>
+    </div>
+
+    <div class="container">
+        <!-- Профиль -->
+        <div class="section-card">
+            <div class="section-card-header">
+                <i class="bi bi-person-circle"></i> Информация о пользователе
+            </div>
+            <div class="section-card-body">
+                <div id="userInfo">
+                    <div class="text-muted text-center py-3">Загрузка...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Редактирование профиля -->
+        <div class="section-card">
+            <div class="section-card-header">
+                <i class="bi bi-pencil-square"></i> Редактировать профиль
+            </div>
+            <div class="section-card-body">
+                <div id="profileAlert" class="alert-msg"></div>
+                <form id="profileForm">
+                    <div class="mb-3">
+                        <label class="form-label">Имя</label>
+                        <input type="text" class="form-control" id="editName" placeholder="Ваше имя">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-control" id="editEmail" placeholder="user@example.com">
+                    </div>
+                    <button type="submit" class="btn-accent" id="saveProfileBtn">Сохранить</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Смена пароля -->
+        <div class="section-card">
+            <div class="section-card-header">
+                <i class="bi bi-key"></i> Смена пароля
+            </div>
+            <div class="section-card-body">
+                <div id="passwordAlert" class="alert-msg"></div>
+                <form id="passwordForm">
+                    <div class="mb-3">
+                        <label class="form-label">Текущий пароль</label>
+                        <input type="password" class="form-control" id="currentPassword" placeholder="Текущий пароль" autocomplete="current-password" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Новый пароль</label>
+                        <input type="password" class="form-control" id="newPassword" placeholder="Новый пароль" autocomplete="new-password" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Подтвердите пароль</label>
+                        <input type="password" class="form-control" id="confirmPassword" placeholder="Повторите новый пароль" autocomplete="new-password" required>
+                    </div>
+                    <button type="submit" class="btn-accent" id="changePasswordBtn">Изменить пароль</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Выход -->
+        <div class="section-card">
+            <div class="section-card-body text-center">
+                <button class="btn-danger-outline" id="logoutBtn">
+                    <i class="bi bi-box-arrow-right"></i> Выйти из системы
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Load user info
+        async function loadUserInfo() {
+            try {
+                const resp = await fetch('/api/auth/me');
+                if (!resp.ok) {
+                    window.location.href = '/';
+                    return;
+                }
+                const user = await resp.json();
+                renderUserInfo(user);
+                document.getElementById('editName').value = user.name || '';
+                document.getElementById('editEmail').value = user.email || '';
+            } catch (e) {
+                window.location.href = '/';
+            }
+        }
+
+        function renderUserInfo(user) {
+            const el = document.getElementById('userInfo');
+            el.innerHTML = `
+                <div class="user-info-row">
+                    <span class="user-info-label">Логин</span>
+                    <span class="user-info-value">${user.username}</span>
+                </div>
+                <div class="user-info-row">
+                    <span class="user-info-label">Имя</span>
+                    <span class="user-info-value">${user.name || 'Не указано'}</span>
+                </div>
+                <div class="user-info-row">
+                    <span class="user-info-label">Email</span>
+                    <span class="user-info-value">${user.email || 'Не указано'}</span>
+                </div>
+                <div class="user-info-row">
+                    <span class="user-info-label">Создан</span>
+                    <span class="user-info-value">${new Date(user.created_at).toLocaleString('ru-RU')}</span>
+                </div>
+                <div class="user-info-row">
+                    <span class="user-info-label">Обновлён</span>
+                    <span class="user-info-value">${new Date(user.updated_at).toLocaleString('ru-RU')}</span>
+                </div>
+            `;
+        }
+
+        // Save profile
+        document.getElementById('profileForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const btn = document.getElementById('saveProfileBtn');
+            btn.disabled = true;
+
+            try {
+                const resp = await fetch('/api/auth/profile', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        name: document.getElementById('editName').value.trim(),
+                        email: document.getElementById('editEmail').value.trim()
+                    })
+                });
+
+                const data = await resp.json();
+                if (resp.ok) {
+                    showProfileAlert('Профиль обновлён', 'success');
+                    loadUserInfo();
+                } else {
+                    showProfileAlert(data.error || 'Ошибка сохранения', 'error');
+                }
+            } catch (e) {
+                showProfileAlert('Ошибка соединения', 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        // Change password
+        document.getElementById('passwordForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const newPass = document.getElementById('newPassword').value;
+            const confirm = document.getElementById('confirmPassword').value;
+
+            if (newPass !== confirm) {
+                showPasswordAlert('Пароли не совпадают', 'error');
+                return;
+            }
+            if (newPass.length < 3) {
+                showPasswordAlert('Пароль должен быть не менее 3 символов', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('changePasswordBtn');
+            btn.disabled = true;
+
+            try {
+                const resp = await fetch('/api/auth/password', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        current_password: document.getElementById('currentPassword').value,
+                        new_password: newPass
+                    })
+                });
+
+                const data = await resp.json();
+                if (resp.ok) {
+                    showPasswordAlert('Пароль успешно изменён', 'success');
+                    document.getElementById('passwordForm').reset();
+                } else {
+                    showPasswordAlert(data.error || 'Ошибка', 'error');
+                }
+            } catch (e) {
+                showPasswordAlert('Ошибка соединения', 'error');
+            } finally {
+                btn.disabled = false;
+            }
+        });
+
+        // Logout
+        document.getElementById('logoutBtn').addEventListener('click', async function() {
+            try {
+                await fetch('/api/auth/logout', { method: 'POST' });
+            } catch (e) {}
+            window.location.href = '/';
+        });
+
+        function showProfileAlert(msg, type) {
+            const el = document.getElementById('profileAlert');
+            el.textContent = msg;
+            el.className = 'alert-msg ' + type;
+            el.style.display = 'block';
+            setTimeout(() => { el.style.display = 'none'; }, 3000);
+        }
+
+        function showPasswordAlert(msg, type) {
+            const el = document.getElementById('passwordAlert');
+            el.textContent = msg;
+            el.className = 'alert-msg ' + type;
+            el.style.display = 'block';
+            setTimeout(() => { el.style.display = 'none'; }, 4000);
+        }
+
+        loadUserInfo();
+    </script>
+</body>
+</html>

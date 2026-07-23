@@ -92,6 +92,26 @@ type RoutePoint struct {
 	Timestamp time.Time `json:"timestamp"`
 }
 
+// User - пользователь системы
+type User struct {
+	ID        int64     `json:"id"`
+	Username  string    `json:"username"`
+	Email     string    `json:"email,omitempty"`
+	Name      string    `json:"name,omitempty"`
+	Password  string    `json:"-"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// Session - сессия пользователя
+type Session struct {
+	ID        int64     `json:"id"`
+	UserID    int64     `json:"user_id"`
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // Anomaly - обнаруженная аномалия
 type Anomaly struct {
 	ID            int64     `json:"id"`

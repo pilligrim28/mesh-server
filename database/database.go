@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 
+	"golang.org/x/crypto/bcrypt"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -165,6 +167,40 @@ func (d *Database) migrate() error {
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_anomalies_device ON anomalies(device_id, timestamp)`,
 		`CREATE INDEX IF NOT EXISTS idx_anomalies_type ON anomalies(type)`,
+
+		// Пользователи и сессии
+		`CREATE TABLE IF NOT EXISTS users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT UNIQUE NOT NULL,
+			email TEXT DEFAULT '',
+			name TEXT DEFAULT '',
+			password TEXT NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		`CREATE TABLE IF NOT EXISTS sessions (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL,
+			token TEXT UNIQUE NOT NULL,
+			expires_at DATETIME NOT NULL,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token)`,
+		`CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`,
+
+		// Healbe метрики
+		`CREATE TABLE IF NOT EXISTS healbe_metrics (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			device_id INTEGER NOT NULL,
+			heart_rate INTEGER,
+			stress_level INTEGER,
+			battery INTEGER,
+			timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (device_id) REFERENCES devices(id)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_healbe_metrics_device ON healbe_metrics(device_id)`,
 	}
 
 	for _, migration := range migrations {
@@ -174,12 +210,45 @@ func (d *Database) migrate() error {
 	}
 
 	log.Println("Database migrations completed successfully")
-	
+
+	// Создаем демо-пользователя при каждом запуске (доступен всегда)
+	if err := d.createDemoUser(); err != nil {
+		log.Printf("Warning: Failed to create demo user: %v", err)
+	}
+
 	// Создаем устройство по умолчанию для переписки
 	if err := d.createDefaultDevice(); err != nil {
 		log.Printf("Warning: Failed to create default device: %v", err)
 	}
-	
+
+	return nil
+}
+
+// createDemoUser создает демо-пользователя если он не существует
+func (d *Database) createDemoUser() error {
+	var count int
+	err := d.DB.QueryRow("SELECT COUNT(*) FROM users WHERE username = 'demo'").Scan(&count)
+	if err != nil {
+		return err
+	}
+
+	if count == 0 {
+		hash, err := bcrypt.GenerateFromPassword([]byte("demo"), bcrypt.DefaultCost)
+		if err != nil {
+			return fmt.Errorf("hash password: %w", err)
+		}
+		_, err = d.DB.Exec(`
+			INSERT INTO users (username, email, name, password)
+			VALUES ('demo', 'demo@example.com', 'Демо-пользователь', ?)
+		`, string(hash))
+		if err != nil {
+			return err
+		}
+		log.Println("Demo user created: demo / demo")
+	} else {
+		log.Println("Demo user already exists")
+	}
+
 	return nil
 }
 
@@ -191,7 +260,7 @@ func (d *Database) createDefaultDevice() error {
 	if err != nil {
 		return err
 	}
-	
+
 	if count == 0 {
 		// Создаем устройство по умолчанию
 		_, err := d.DB.Exec(`
@@ -205,6 +274,6 @@ func (d *Database) createDefaultDevice() error {
 	} else {
 		log.Println("Default device already exists")
 	}
-	
+
 	return nil
 }
