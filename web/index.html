@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mesh Pulse — мониторинг</title><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/style.css"></head>
+<body>
+<header>
+  <div class="logo"><img src="/favicon.svg" alt="">Mesh Pulse</div>
+  <div class="gws" id="gws"></div>
+  <span class="chip"><span class="dot" id="wsdot"></span><span id="wstxt">подключение…</span></span>
+  <button class="btn small" id="pwBtn" title="Сменить пароль">🔑 <span id="me"></span></button>
+  <button class="btn small" id="logout">Выйти</button>
+</header>
+<main>
+  <section>
+    <div class="summary">
+      <div class="panel"><span class="muted">Узлов</span><b id="sNodes">0</b></div>
+      <div class="panel"><span class="muted">На связи</span><b id="sOnline">0</b></div>
+      <div class="panel"><span class="muted">Средний пульс</span><b id="sAvg">—</b></div>
+      <div class="panel"><span class="muted">Активных алертов</span><b id="sAlerts">0</b></div>
+    </div>
+    <h2>Носимые узлы</h2>
+    <div class="grid" id="cards"></div>
+    <div class="empty hidden" id="empty">
+      Пока нет данных.<br>Проверьте, что шлюз Heltec V3 включён рядом с сервером,<br>а ESP32-C3 с датчиком подключилась к своему узлу (светодиод горит постоянно).
+    </div>
+    <div class="panel hidden" id="detail">
+      <div class="head">
+        <div class="grow"><b id="dName" style="font-size:17px"></b> <span class="muted" id="dId"></span></div>
+        <select id="dRange" style="width:auto">
+          <option value="15">15 минут</option><option value="60" selected>1 час</option>
+          <option value="360">6 часов</option><option value="1440">24 часа</option></select>
+        <button class="btn small" id="dRename">Переименовать</button>
+        <button class="btn small" id="dDelete">Удалить</button>
+        <button class="btn small" id="dClose">Закрыть</button>
+      </div>
+      <canvas id="chart"></canvas>
+      <div class="meta" id="dStats" style="margin-top:10px"></div>
+    </div>
+  </section>
+  <aside class="panel">
+    <h2>Алерты</h2>
+    <div class="alerts" id="alerts"><div class="muted">Нет алертов</div></div>
+  </aside>
+</main>
+<dialog id="pwDlg"><form method="dialog" id="pwForm">
+  <b>Смена пароля</b>
+  <label>Текущий пароль</label><input type="password" id="pwOld" required>
+  <label>Новый пароль (мин. 6 символов)</label><input type="password" id="pwNew" minlength="6" required>
+  <div class="err" id="pwErr"></div>
+  <div class="row"><button class="btn" value="cancel" formnovalidate>Отмена</button><button class="btn primary" value="ok">Сохранить</button></div>
+</form></dialog>
+<script src="/app.js"></script>
+</body></html>

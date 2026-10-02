@@ -1,0 +1,15 @@
+# systemd: sudo cp deploy/mesh-server.service /etc/systemd/system/ && sudo systemctl enable --now mesh-server
+[Unit]
+Description=Mesh Pulse server (Meshtastic heart-rate monitoring)
+After=network.target bluetooth.target
+Wants=bluetooth.target
+
+[Service]
+User=meshpulse
+WorkingDirectory=/opt/mesh-server
+ExecStart=/opt/mesh-server/mesh-server
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,45 +1,23 @@
-# Binaries
+# Бинарники
+/mesh-server
+/mesh-server.exe
+/dist/
 *.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-mesh-server
 
-# Database
+# Данные и секреты
 *.db
-*.sqlite
-*.sqlite3
 *.db-shm
 *.db-wal
-*.db-journal
-
-# Environment
 .env
 
-# IDE
+# Прошивки
+firmware/esp32c3-pulse/.pio/
+firmware/meshtastic-heltec-v3/.meshtastic-firmware/
+firmware/meshtastic-heltec-v3/out/
+# ключ шифрования вашей mesh-сети — НЕ публикуйте
+firmware/meshtastic-heltec-v3/settings.json
+
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
-
-# Logs
-*.log
-
-# OS
 .DS_Store
 Thumbs.db
-
-# Python venv
-client/venv/
-__pycache__/
-*.pyc
-*.pyo
-
-# Build artifacts
-*.o
-*.a
-
-# Temp files
-_patch_*.py
