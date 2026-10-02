@@ -46,7 +46,7 @@ func (r *RouteRepository) GetAll() ([]models.Route, error) {
 	}
 	defer rows.Close()
 
-	var routes []models.Route
+	routes := []models.Route{}
 	for rows.Next() {
 		var route models.Route
 		var waypointsStr string
@@ -105,7 +105,7 @@ func (r *RouteRepository) GetPointsByPeriod(deviceID int64, from, to time.Time) 
 	}
 	defer rows.Close()
 
-	var points []models.RoutePoint
+	points := []models.RoutePoint{}
 	for rows.Next() {
 		var p models.RoutePoint
 		if err := rows.Scan(&p.ID, &p.DeviceID, &p.RouteID, &p.Latitude, &p.Longitude, &p.Timestamp); err != nil {
@@ -128,7 +128,7 @@ func (r *RouteRepository) GetRecentPoints(deviceID int64, limit int) ([]models.R
 	}
 	defer rows.Close()
 
-	var points []models.RoutePoint
+	points := []models.RoutePoint{}
 	for i := 0; rows.Next(); i++ {
 		var p models.RoutePoint
 		if err := rows.Scan(&p.ID, &p.DeviceID, &p.RouteID, &p.Latitude, &p.Longitude, &p.Timestamp); err != nil {
@@ -180,7 +180,7 @@ func (r *RouteRepository) GetAnomalies(deviceID *int64, limit int) ([]models.Ano
 	}
 	defer rows.Close()
 
-	var results []models.Anomaly
+	results := []models.Anomaly{}
 	for rows.Next() {
 		var a models.Anomaly
 		if err := rows.Scan(&a.ID, &a.DeviceID, &a.Type, &a.MetricValue, &a.ExpectedRange, &a.Severity, &a.Description, &a.Timestamp); err != nil {

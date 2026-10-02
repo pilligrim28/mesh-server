@@ -51,7 +51,7 @@ func (r *DiscoveryRepository) GetAll() ([]models.DiscoveredDevice, error) {
 	}
 	defer rows.Close()
 
-	var devices []models.DiscoveredDevice
+	devices := []models.DiscoveredDevice{}
 	for rows.Next() {
 		device, err := r.scanDeviceRow(rows)
 		if err != nil {
@@ -72,7 +72,7 @@ func (r *DiscoveryRepository) GetByType(scanType string) ([]models.DiscoveredDev
 	}
 	defer rows.Close()
 
-	var devices []models.DiscoveredDevice
+	devices := []models.DiscoveredDevice{}
 	for rows.Next() {
 		device, err := r.scanDeviceRow(rows)
 		if err != nil {
@@ -93,7 +93,7 @@ func (r *DiscoveryRepository) GetMeshtasticDevices() ([]models.DiscoveredDevice,
 	}
 	defer rows.Close()
 
-	var devices []models.DiscoveredDevice
+	devices := []models.DiscoveredDevice{}
 	for rows.Next() {
 		device, err := r.scanDeviceRow(rows)
 		if err != nil {

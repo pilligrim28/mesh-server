@@ -50,7 +50,7 @@ func (r *AlertRepository) GetByDeviceID(deviceID int64) ([]models.Alert, error) 
 	}
 	defer rows.Close()
 
-	var alerts []models.Alert
+	alerts := []models.Alert{}
 	for rows.Next() {
 		a, err := r.scanAlertRow(rows)
 		if err != nil {
@@ -74,7 +74,7 @@ func (r *AlertRepository) GetUnread() ([]models.Alert, error) {
 	}
 	defer rows.Close()
 
-	var alerts []models.Alert
+	alerts := []models.Alert{}
 	for rows.Next() {
 		a, err := r.scanAlertRow(rows)
 		if err != nil {

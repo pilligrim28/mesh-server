@@ -46,7 +46,7 @@ func (r *MetricsRepository) GetByDeviceID(deviceID int64, limit int) ([]models.M
 	}
 	defer rows.Close()
 
-	var metrics []models.Metrics
+	metrics := []models.Metrics{}
 	for rows.Next() {
 		m, err := r.scanMetricsRow(rows)
 		if err != nil {
@@ -86,7 +86,7 @@ func (r *MetricsRepository) GetAllLatest() ([]models.Metrics, error) {
 	}
 	defer rows.Close()
 
-	var metrics []models.Metrics
+	metrics := []models.Metrics{}
 	for rows.Next() {
 		m, err := r.scanMetricsRow(rows)
 		if err != nil {

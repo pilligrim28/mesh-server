@@ -69,7 +69,7 @@ func (r *HealbeRepository) GetLatest(deviceID int64, limit int) ([]*models.Healb
 	}
 	defer rows.Close()
 
-	var metrics []*models.HealbeMetrics
+	metrics := []*models.HealbeMetrics{}
 	for rows.Next() {
 		m := &models.HealbeMetrics{}
 		var timestampStr string
@@ -104,7 +104,7 @@ func (r *HealbeRepository) GetLatestForAll(limit int) ([]*models.HealbeMetrics, 
 	}
 	defer rows.Close()
 
-	var metrics []*models.HealbeMetrics
+	metrics := []*models.HealbeMetrics{}
 	for rows.Next() {
 		m := &models.HealbeMetrics{}
 		var timestampStr string

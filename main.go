@@ -781,12 +781,24 @@ func main() {
 	// Static files (frontend)
 	mux.Handle("/static/", noCacheStatic(http.StripPrefix("/static/", http.FileServer(http.Dir("static")))))
 
+	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "static/favicon.svg")
+	})
+
 	// Root handler — проверяет сессию и направляет на login.html или index.html
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
 		}
+
+		// "/" отдаёт login.html или index.html в зависимости от сессии.
+		// Отключаем кэш и условные запросы, иначе браузер получает 304
+		// и показывает закэшированную страницу входа после авторизации.
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		w.Header().Set("Vary", "Cookie")
+		r.Header.Del("If-Modified-Since")
+		r.Header.Del("If-None-Match")
 
 		// Проверяем сессию через куку
 		cookie, err := r.Cookie("session_token")

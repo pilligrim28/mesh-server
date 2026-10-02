@@ -58,7 +58,7 @@ func (r *MessageRepository) GetByDeviceID(deviceID int64, limit int) ([]models.M
 	}
 	defer rows.Close()
 
-	var messages []models.Message
+	messages := []models.Message{}
 	for rows.Next() {
 		m, err := r.scanMessageRow(rows)
 		if err != nil {
@@ -83,7 +83,7 @@ func (r *MessageRepository) GetOutbound(limit int) ([]models.Message, error) {
 	}
 	defer rows.Close()
 
-	var messages []models.Message
+	messages := []models.Message{}
 	for rows.Next() {
 		m, err := r.scanMessageRow(rows)
 		if err != nil {

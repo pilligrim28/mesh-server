@@ -54,7 +54,7 @@ func (r *DeviceRepository) GetAll() ([]models.Device, error) {
 	}
 	defer rows.Close()
 
-	var devices []models.Device
+	devices := []models.Device{}
 	for rows.Next() {
 		device, err := r.scanDeviceRow(rows)
 		if err != nil {

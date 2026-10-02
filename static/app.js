@@ -96,11 +96,11 @@ document.addEventListener('DOMContentLoaded', () => {
 function initMap() {
     map = L.map('map').setView([59.9343, 30.3351], 12);
 
-    // CARTO Voyager — цветная карта
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap &copy; CARTO',
-        subdomains: 'abcd',
-        maxZoom: 20
+    // OpenStreetMap — бесплатная подложка без API-ключа
+    // (CARTO теперь требует ключ и показывает водяной знак "API KEY REQUIRED")
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+        maxZoom: 19
     }).addTo(map);
 }
 
