@@ -21,3 +21,4 @@ firmware/meshtastic-heltec-v3/settings.json
 .idea/
 .DS_Store
 Thumbs.db
+**/.pio/

@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pulse COM — MAX30102</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath fill='%23f87171' d='M16 28S3 20 3 11a6.5 6.5 0 0 1 13-1 6.5 6.5 0 0 1 13 1c0 9-13 17-13 17z'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand"><span class="heart" id="hdrHeart">♥</span> Pulse COM <span class="muted small">MAX30102 · Pro Micro</span></div>
+  <span class="chip" id="conn"><span class="dot"></span><span>нет связи</span></span>
+  <div class="spacer"></div>
+  <label class="small muted" for="portSel">Порт</label>
+  <select id="portSel"><option value="">Автопоиск</option></select>
+  <button class="btn" id="portRefresh" title="Обновить список">Обновить</button>
+</header>
+
+<main>
+  <section class="vitals">
+    <div class="panel big">
+      <h2>Пульс</h2>
+      <div class="val"><span class="heart" id="beat">♥</span><span id="bpm">—</span><span class="u">уд/мин</span></div>
+      <div class="sub muted" id="bpmSub">приложите палец к датчику</div>
+    </div>
+    <div class="panel big">
+      <h2>SpO₂</h2>
+      <div class="val"><span id="spo2">—</span><span class="u">%</span></div>
+      <div class="sub muted">ориентировочно, не медицинский прибор</div>
+    </div>
+    <div class="panel big">
+      <h2>Датчик</h2>
+      <div class="kv"><span>Палец</span><b id="finger">—</b></div>
+      <div class="kv"><span>IR</span><b id="ir">—</b></div>
+      <div class="kv"><span>Red</span><b id="red">—</b></div>
+      <div class="kv"><span>Температура</span><b id="temp">—</b></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="row"><h2>Пульс и SpO₂</h2><div class="spacer"></div>
+      <div class="seg" id="range"><button data-m="1">1 мин</button><button data-m="5" class="on">5 мин</button><button data-m="15">15 мин</button></div>
+    </div>
+    <canvas id="trend" height="200"></canvas>
+  </section>
+
+  <section class="panel" id="ppgPanel">
+    <div class="row"><h2>Пульсовая волна (RAW, 100 Гц)</h2><div class="spacer"></div><span class="muted small" id="rawRate"></span></div>
+    <canvas id="ppg" height="160"></canvas>
+    <div class="muted small" id="ppgHint">Включите «Сырые данные», чтобы видеть волну и писать *_raw.csv</div>
+  </section>
+
+  <section class="grid2">
+    <div class="panel">
+      <h2>Запись</h2>
+      <div class="rec" id="recBox"></div>
+      <div class="row gap">
+        <input id="label" placeholder="Метка сессии, например имя" maxlength="40">
+        <button class="btn primary" id="recStart">● Новая сессия</button>
+        <button class="btn" id="recStop">■ Стоп</button>
+      </div>
+      <div class="muted small" id="dir"></div>
+    </div>
+    <div class="panel">
+      <h2>Управление Arduino</h2>
+      <div class="row gap wrap">
+        <button class="btn" id="run">Стоп измерений</button>
+        <button class="btn" id="raw">Сырые данные: выкл</button>
+        <button class="btn" data-cmd="STATUS">Статус</button>
+      </div>
+      <div class="row gap wrap ctl">
+        <label>Сводка раз в
+          <select id="rate"><option value="250">0,25 с</option><option value="500">0,5 с</option><option value="1000">1 с</option><option value="2000">2 с</option><option value="5000">5 с</option></select>
+        </label>
+        <label class="grow">Яркость LED <b id="ledV">—</b>
+          <input type="range" id="led" min="0" max="255" step="1">
+        </label>
+      </div>
+      <div class="log" id="log"></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="row"><h2>Сохранённые сессии</h2><div class="spacer"></div><button class="btn" id="sessRefresh">Обновить</button></div>
+    <table class="tbl"><thead><tr><th>Начало</th><th>Метка</th><th>Размер</th><th>Файлы</th><th></th></tr></thead><tbody id="sessions"></tbody></table>
+  </section>
+</main>
+<div class="toast hidden" id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>

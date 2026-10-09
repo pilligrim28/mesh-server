@@ -28,6 +28,7 @@
 | `internal/web`, `web/` | REST API, WebSocket, веб-интерфейс |
 | `firmware/esp32c3-pulse` | прошивка датчика (PlatformIO) |
 | `firmware/meshtastic-heltec-v3` | сборка прошивок Meshtastic для шлюза и носимых узлов |
+| `firmware/promicro-max30102`, `cmd/pulse-com` | Pro Micro + MAX30102 по USB: скетч и приложение записи в CSV |
 
 ---
 
@@ -204,3 +205,13 @@ make dist     # windows-amd64, linux-amd64, linux-arm64, linux-armv7 → dist/
 | POST | `/api/alerts/{id}/ack` | принять алерт |
 | GET | `/api/gateways` | состояние подключений |
 | WS | `/ws` | события `reading`, `alert`, `gateway`, `battery`, … |
+
+## 10. Вариант на Arduino Pro Micro по USB (без радио)
+
+Если пока есть только Pro Micro с MAX30102 (SDA → 2, SCL → 3): скетч и приложение `pulse-com`
+для чтения по COM-порту с записью каждой сессии в отдельные CSV —
+см. [firmware/promicro-max30102/README.md](firmware/promicro-max30102/README.md).
+
+```
+go build -o pulse-com.exe ./cmd/pulse-com     # или go run ./cmd/pulse-com -sim
+```
